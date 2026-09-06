@@ -1,4 +1,4 @@
-from app.bot.formatting import format_full_item, build_merge_keyboard
+from app.bot.formatting import format_full_item, build_merge_keyboard, build_delete_keyboard, build_list_delete_keyboard
 
 
 def test_format_full_item_basic():
@@ -63,3 +63,35 @@ def test_build_merge_keyboard_view_button_mentions_existing_id():
         button for row in keyboard.inline_keyboard for button in row if button.callback_data == "merge:view:7:9"
     )
     assert "#7" in view_button.text
+
+
+def test_build_delete_keyboard_has_yes_no_buttons():
+    keyboard = build_delete_keyboard(item_id=5)
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+
+    assert len(buttons) == 2
+    callback_data = {button.callback_data for button in buttons}
+    assert callback_data == {"delete:yes:5", "delete:no:5"}
+
+
+def test_build_list_delete_keyboard_one_button_per_item():
+    items = [{"id": 1}, {"id": 2}, {"id": 3}]
+    keyboard = build_list_delete_keyboard(items)
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+
+    callback_data = {button.callback_data for button in buttons}
+    assert callback_data == {"delconfirm:1", "delconfirm:2", "delconfirm:3"}
+
+
+def test_build_list_delete_keyboard_chunks_into_rows_of_five():
+    items = [{"id": i} for i in range(1, 8)]  # 7 items
+    keyboard = build_list_delete_keyboard(items)
+
+    assert len(keyboard.inline_keyboard) == 2
+    assert len(keyboard.inline_keyboard[0]) == 5
+    assert len(keyboard.inline_keyboard[1]) == 2
+
+
+def test_build_list_delete_keyboard_empty_items():
+    keyboard = build_list_delete_keyboard([])
+    assert len(keyboard.inline_keyboard) == 0

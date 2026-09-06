@@ -125,22 +125,28 @@ see the "Storage" section above).
   engineering a private API — both rejected as disproportionate/ToS-risky
 - ✅ New `app/extractors/threads.py`: parses `og:description` (the
   caption) and `og:title` (used to derive the author name) via regex,
-  HTML-entity-unescaped; detects a numbered multi-part post (`(1/4)`,
-  `part 2 of 5`) via `looks_like_partial_thread()`
+  HTML-entity-unescaped
 - ✅ New `source: "threads"` value (`normalize_threads_post()`) distinct
   from `"web"`/`"pasted_text"`, so `/view` shows where content actually
   came from
-- ✅ When a partial-thread pattern is detected, the bot still summarizes
-  what it has but follows up with an honest heads-up rather than silently
-  presenting 1/4 of a story as complete — explicitly the user's own
-  requirement when asked about multi-part threads
-- ✅ 16 new tests (OG-tag parsing incl. entity-unescaping and missing/empty
-  cases, author extraction, partial-thread regex, domain routing,
-  normalization); verified live end-to-end: real network fetch against an
-  actual public Threads post (exact text matched what the browser check
-  found), and the full message-handling pipeline with a mocked partial-part
-  post, confirming the summary and the heads-up arrive as two separate,
-  correctly-ordered messages
+- ⚠️ **Correction after real-world testing:** the first version tried to
+  *detect* a multi-part post by regex-matching numbering typed into the
+  caption (`(1/4)`, `part 2 of 5`). The user hit a real Threads post using
+  Threads' own **native** "1/9"-style thread badge — UI chrome, not text
+  in the caption — which the regex structurally cannot see. Investigated
+  live: no per-post threading signal (reply count, thread position, etc.)
+  survives an unauthenticated fetch anywhere in the raw HTML; a promising
+  `reply_count` hit turned out to be generic app config, not real per-post
+  data. Conclusion: detection is not reliably achievable at all, native or
+  manual. **Fix:** removed the regex/detection entirely; the bot now
+  unconditionally discloses the "I can only read the linked post, not
+  replies" limitation on every Threads extraction, rather than gambling on
+  detecting when it applies
+- ✅ 12 tests (OG-tag parsing incl. entity-unescaping and missing/empty
+  cases, author extraction, domain routing, normalization); verified live
+  end-to-end twice: once against a post with no numbering (confirmed the
+  note now always appears) and once via the original real-network fetch
+  matching the earlier browser investigation exactly
 
 ### Phase 2.2 — Retrieval (`/list`, `/search`, `/view`)
 - ✅ `/list [n]` — last n saved items (default 10, max 50, clamped; invalid input falls back to default)
@@ -186,3 +192,9 @@ see the "Storage" section above).
 - ✅ First id is the survivor (keeps its row, absorbs the second's content into one summary via the existing `update_merged_summary`); rejects merging an id with itself; reports clearly which id is missing if either doesn't exist
 - ✅ Reuses the exact same confirm/decline/view-first flow as an automatic suggestion (`build_merge_keyboard()`, extracted into `app/bot/formatting.py`, and the existing `handle_merge_callback` — zero new callback-handling code needed since a manual merge and an auto-suggested one are identical once both ids are known)
 - ✅ 9 new tests (two-id parsing, keyboard construction/callback_data correctness); verified live end-to-end against a throwaway copy of the real database — confirm prompt, self-merge rejection, missing-id handling, no-args usage message, view-before-deciding (leaves the prompt untouched), and the actual merge (survivor absorbed the other's content, the absorbed row stayed intact) all behaved correctly
+
+### Bonus — delete directly from /list or /search results (user-requested, not a planned phase)
+- ✅ Telegram can't attach a button to one line inside a text message, but it can attach a row of buttons below the whole message — `/list` and `/search` (and the `/start`/`/help` quick "📋 Show recent items" button) now show a small "🗑 #id" button per displayed item, alongside the existing text list
+- ✅ Tapping one opens the exact same Yes/No confirmation `/delete <id>` already uses (`build_delete_keyboard()`, extracted into `app/bot/formatting.py` alongside `build_merge_keyboard()`) — one tap to request, one more to confirm, nothing deletes on the first tap
+- ✅ Capped at 20 items (`_MAX_ITEMS_FOR_DELETE_BUTTONS`) — beyond that a wall of buttons would be worse than useful; `/list 50` still works, it just falls back to typing `/delete <id>`
+- ✅ 9 new tests (keyboard construction, row-chunking at 5 per row, empty-list and over-threshold edge cases); verified live end-to-end against a throwaway copy of the real database — `/list` correctly attached one button per shown item, tapping a button produced the right confirmation prompt, and confirming actually deleted the row

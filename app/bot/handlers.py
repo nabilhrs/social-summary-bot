@@ -45,11 +45,11 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
-PARTIAL_THREAD_NOTE = (
-    "⚠️ Heads up — this looks like part of a multi-part thread. I can only read "
-    "the post you linked, not any follow-up replies (Threads loads those via "
-    "JavaScript, which a plain link fetch can't see). Paste the rest of the "
-    "thread's text too if you want a complete summary."
+THREADS_LIMITATION_NOTE = (
+    "ℹ️ Threads posts can be part of a longer thread (including Threads' own "
+    "native \"1/9\"-style numbering, which isn't visible to a plain link fetch). "
+    "I can only read the post you linked, not any replies — paste the rest too "
+    "if you want the full picture."
 )
 
 # PRD 5.5 — how many recent saved items to check new content against.
@@ -72,7 +72,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(INVALID_INPUT_TEXT)
         return
 
-    is_partial_thread = False
+    is_threads_content = False
 
     if looks_like_url(raw_text):
         platform = detect_unsupported_platform(raw_text)
@@ -85,7 +85,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if extracted is None:
                 await message.reply_text(EXTRACTION_FAILED_TEXT)
                 return
-            is_partial_thread = extracted["is_partial_thread"]
+            is_threads_content = True
             content = normalize_threads_post(raw_text, extracted)
         else:
             extracted = await fetch_and_extract(raw_text)
@@ -104,8 +104,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     await message.reply_text(summary.text)
-    if is_partial_thread:
-        await message.reply_text(PARTIAL_THREAD_NOTE)
+    if is_threads_content:
+        await message.reply_text(THREADS_LIMITATION_NOTE)
 
     try:
         new_id = await asyncio.to_thread(save_summary, content, summary.text)

@@ -70,11 +70,21 @@ they'd buy.
 
 **What got built:** `app/extractors/threads.py` — reads `og:description`
 (caption) and derives the author from `og:title`. A `source: "threads"`
-value distinguishes these from regular web articles in `/view`. Since the
-reply chain isn't reachable, a numbered multi-part post (`(1/4)`, `part 2
-of 5`) is detected and the bot summarizes what it has, then follows up
-with an honest heads-up that it's only reading one part — rather than
-silently presenting a fragment as if it were the whole story.
+value distinguishes these from regular web articles in `/view`.
+
+**Correction after real-world use:** the first version tried to *detect*
+a multi-part post by regex-matching numbering typed into the caption
+(`(1/4)`, `part 2 of 5`). The user then hit a real post using Threads'
+own **native** "1/9"-style thread badge — UI chrome computed client-side,
+not text in the caption — which the regex structurally cannot see.
+Investigated live: no per-post threading signal survives an
+unauthenticated fetch anywhere in the raw HTML (a promising `reply_count`
+match turned out to be generic app config, not real per-post data), so
+detection isn't reliably achievable at all, native badge or manual
+typing. Fix: removed detection entirely — the bot now unconditionally
+discloses the "I can only read the linked post, not replies" limitation
+on every Threads extraction, rather than gambling on catching the cases
+that matter.
 
 **Addendum — what real TikTok video summarization would take**, for the
 record: downloading the video (`yt-dlp`) and feeding it directly to

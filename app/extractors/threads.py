@@ -8,11 +8,19 @@ restrict use to rendering an embed, there's no equivalent restriction on
 reading a page's own standard meta tags. Verified live: a post permalink's
 raw, un-rendered HTML contains the full caption in og:description.
 
-This only gets the linked post's own caption — Threads hydrates replies,
-images, and video entirely via client-side JS after the page loads, so a
-plain fetch never sees them. A multi-part thread ("(1/4)", "part 2 of 5")
-is detected so the caller can warn the user rather than silently
-summarizing one part as if it were the whole thing.
+This only gets the linked post's own caption. Threads hydrates everything
+else — replies, images, video, and its own native multi-part "1/9"-style
+thread badge — entirely via client-side JS/API calls that a plain fetch
+never sees. An earlier version of this module tried to detect a multi-part
+post by regex-matching numbering typed into the caption text (e.g. "(1/4)"),
+but live testing showed Threads' native thread badge isn't part of the
+caption at all — it's UI chrome computed client-side, with no equivalent
+signal anywhere in the raw HTML (confirmed: no per-post reply/thread
+metadata survives an unauthenticated fetch, only generic app config that
+happens to share substrings like "reply_count"). Regex detection therefore
+missed the common case and gave false confidence. The caller now discloses
+the limitation unconditionally for every Threads extraction instead of
+trying to detect it — see PARTIAL_THREAD_NOTE in app/bot/handlers.py.
 """
 import html as html_module
 import logging
@@ -29,11 +37,6 @@ _OG_DESCRIPTION_RE = re.compile(r'<meta[^>]+property="og:description"[^>]+conten
 _OG_TITLE_RE = re.compile(r'<meta[^>]+property="og:title"[^>]+content="([^"]*)"', re.IGNORECASE)
 _AUTHOR_FROM_TITLE_RE = re.compile(r"^(.*?)\s*\(@")
 
-_THREAD_PART_RE = re.compile(
-    r"(?:\(\s*\d{1,2}\s*/\s*\d{1,2}\s*\)|\b\d{1,2}\s*/\s*\d{1,2}\b|\bpart\s+\d{1,2}\s+of\s+\d{1,2}\b)",
-    re.IGNORECASE,
-)
-
 
 def _extract_og_field(body: str, pattern: re.Pattern) -> str | None:
     match = pattern.search(body)
@@ -47,10 +50,6 @@ def _extract_author(og_title: str | None) -> str | None:
         return None
     match = _AUTHOR_FROM_TITLE_RE.match(og_title)
     return match.group(1).strip() if match else None
-
-
-def looks_like_partial_thread(text: str) -> bool:
-    return bool(_THREAD_PART_RE.search(text))
 
 
 async def fetch_and_extract(url: str) -> dict | None:
@@ -71,8 +70,4 @@ async def fetch_and_extract(url: str) -> dict | None:
 
     author = _extract_author(_extract_og_field(response.text, _OG_TITLE_RE))
 
-    return {
-        "author": author,
-        "text": text,
-        "is_partial_thread": looks_like_partial_thread(text),
-    }
+    return {"author": author, "text": text}

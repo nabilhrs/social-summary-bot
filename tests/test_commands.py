@@ -4,6 +4,8 @@ from app.bot.commands import (
     _format_item_list,
     _parse_id_arg,
     _parse_two_id_args,
+    _delete_keyboard_for,
+    _MAX_ITEMS_FOR_DELETE_BUTTONS,
 )
 
 
@@ -93,5 +95,26 @@ def test_format_item_list_includes_view_hint():
     items = [{"id": 1, "title": "A", "original_text": "x", "created_at": "2026-09-06T00:00:00+00:00"}]
     text = _format_item_list(items, "Header:")
     assert "/view <id>" in text
+
+
+def test_delete_keyboard_for_builds_one_button_per_item():
+    items = [{"id": 1}, {"id": 2}]
+    keyboard = _delete_keyboard_for(items)
+    buttons = [b for row in keyboard.inline_keyboard for b in row]
+    assert {b.callback_data for b in buttons} == {"delconfirm:1", "delconfirm:2"}
+
+
+def test_delete_keyboard_for_none_when_empty():
+    assert _delete_keyboard_for([]) is None
+
+
+def test_delete_keyboard_for_none_when_over_threshold():
+    items = [{"id": i} for i in range(_MAX_ITEMS_FOR_DELETE_BUTTONS + 1)]
+    assert _delete_keyboard_for(items) is None
+
+
+def test_delete_keyboard_for_present_at_threshold():
+    items = [{"id": i} for i in range(_MAX_ITEMS_FOR_DELETE_BUTTONS)]
+    assert _delete_keyboard_for(items) is not None
 
 
