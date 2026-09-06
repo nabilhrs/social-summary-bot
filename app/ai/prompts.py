@@ -25,7 +25,13 @@ _FULL_STRUCTURE = (
     "TAKEAWAY: <1 sentence>"
 )
 
-_COMPACT_STRUCTURE = "SUMMARY: <1-3 sentence summary, a single tight paragraph — no headers, no bullet points>"
+_COMPACT_STRUCTURE = (
+    "SUMMARY: <a compact summary, no headers. If the note makes one point, "
+    "write 1-2 tight sentences as a single paragraph. If it clearly lists "
+    "several distinct points or tips, use a short bullet list instead — "
+    "pick whichever reads more naturally for this specific note, don't "
+    "force one style>"
+)
 
 
 def _is_short_content(text: str) -> bool:
