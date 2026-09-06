@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 
 from app.config import config
 from app.database.database import list_items, search_items, get_by_id, undo_merge
+from app.bot.formatting import format_full_item
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
@@ -66,19 +67,6 @@ def _parse_id_arg(args: list[str]) -> int | None:
         return int(args[0])
     except ValueError:
         return None
-
-
-def _format_full_item(item: dict) -> str:
-    lines = [f"#{item['id']} — {item['title'] or 'Untitled'}"]
-    lines.append(f"Saved: {item['created_at'][:10]} · Source: {item['source']}")
-    if item.get("url"):
-        lines.append(f"URL: {item['url']}")
-    if item.get("merged_from"):
-        merged_ids = "#" + item["merged_from"].replace(",", ", #")
-        lines.append(f"Merged from: {merged_ids}")
-    lines.append("")
-    lines.append(item["summary"])
-    return "\n".join(lines)
 
 
 def _quick_action_keyboard() -> InlineKeyboardMarkup:
@@ -191,7 +179,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
 
-    await update.message.reply_text(_format_full_item(item))
+    await update.message.reply_text(format_full_item(item))
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

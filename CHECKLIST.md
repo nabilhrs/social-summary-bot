@@ -132,3 +132,9 @@ see the "Storage" section above).
 - ✅ `/start` and `/help` now include inline "📋 Show recent items" / "❓ Help" buttons that run `/list` and `/help` directly on tap — the only two commands with no required argument, so the only two a button can fully replace
 - ✅ Commands needing an argument (`/search`, `/view`, `/delete`, `/undo`) can't be reduced to a bare button tap (Telegram has no way to prefill a value into the input box from a callback) — the command menu still helps by autocompleting the command name itself
 - ✅ Verified live: `post_init` hook present on the built `Application`, all handler patterns registered correctly, `/start` includes the buttons, and both quick actions produce correct output against the real database
+
+### Bonus — view a related note before deciding to merge (user-requested, not a planned phase)
+- ✅ Merge suggestions now have a third, optional "👀 View #id first" button alongside Yes/No — useful when the related item is old enough that you don't remember what it said
+- ✅ Viewing sends a *new* message rather than editing the suggestion, so the original Yes/No/View buttons stay live afterward — viewing never consumes or resets the decision, matching the "not compulsory, just an added option" requirement
+- ✅ Extracted `format_full_item()` (previously private to `/view`) into a shared `app/bot/formatting.py` so both `/view` and this button use identical formatting instead of duplicating it
+- ✅ Verified live: the view button sends a new message with the full related item and does *not* call `edit_message_text` on the original suggestion

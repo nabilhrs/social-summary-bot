@@ -27,6 +27,7 @@ from app.database.database import (
     update_merged_summary,
     delete_item,
 )
+from app.bot.formatting import format_full_item
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if match is None:
         return
 
-    # Merge decision is encoded directly in callback_data (merge:<yes|no>:<existing_id>:<new_id>)
+    # Merge decision is encoded directly in callback_data (merge:<yes|no|view>:<existing_id>:<new_id>)
     # rather than kept in memory — that state must survive a bot restart, and must not depend on
     # which process instance handles the eventual button click.
     keyboard = InlineKeyboardMarkup(
@@ -103,7 +104,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [
                 InlineKeyboardButton("Yes, merge", callback_data=f"merge:yes:{match['id']}:{new_id}"),
                 InlineKeyboardButton("No, keep separate", callback_data=f"merge:no:{match['id']}:{new_id}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    f"👀 View #{match['id']} first", callback_data=f"merge:view:{match['id']}:{new_id}"
+                ),
+            ],
         ]
     )
     title = match["title"] or "Untitled"
@@ -127,6 +133,18 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     _, decision, existing_id_str, new_id_str = query.data.split(":")
     existing_id, new_id = int(existing_id_str), int(new_id_str)
+
+    if decision == "view":
+        # Sends a new message rather than editing the suggestion, so the
+        # original Yes/No/View buttons stay intact for a decision afterward —
+        # viewing is optional and shouldn't consume the prompt (see PRD V2
+        # discussion: "not compulsory, just an added option").
+        old_row = await asyncio.to_thread(get_by_id, existing_id)
+        if old_row is None:
+            await query.message.reply_text(f"Couldn't find #{existing_id} anymore.")
+            return
+        await query.message.reply_text(format_full_item(old_row))
+        return
 
     if decision == "no":
         await query.edit_message_text("Kept as a separate entry.")

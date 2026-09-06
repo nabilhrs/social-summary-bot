@@ -71,7 +71,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("undo", undo_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no):\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no|view):\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
     app.add_error_handler(log_error)
