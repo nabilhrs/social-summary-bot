@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 
 from app.config import config
 from app.database.database import list_items, search_items, get_by_id, undo_merge
-from app.bot.formatting import format_full_item
+from app.bot.formatting import format_full_item, build_merge_keyboard
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
@@ -28,6 +28,7 @@ HELP_TEXT = (
     "/list [n] — show your last n saved items (default 10, max 50)\n"
     "/search <keyword> — search your saved items\n"
     "/view <id> — show the full summary for a saved item\n"
+    "/merge <keep_id> <absorb_id> — merge two saved items into one (asks for confirmation)\n"
     "/delete <id> — delete a saved item (asks for confirmation)\n"
     "/undo <id> — revert a merged item back to its pre-merge summary\n"
 )
@@ -65,6 +66,15 @@ def _parse_id_arg(args: list[str]) -> int | None:
         return None
     try:
         return int(args[0])
+    except ValueError:
+        return None
+
+
+def _parse_two_id_args(args: list[str]) -> tuple[int, int] | None:
+    if len(args) < 2:
+        return None
+    try:
+        return int(args[0]), int(args[1])
     except ValueError:
         return None
 
@@ -180,6 +190,42 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(format_full_item(item))
+
+
+async def merge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    ids = _parse_two_id_args(context.args)
+    if ids is None:
+        await update.message.reply_text("Usage: /merge <keep_id> <absorb_id>")
+        return
+
+    keep_id, absorb_id = ids
+    if keep_id == absorb_id:
+        await update.message.reply_text("Can't merge an item with itself.")
+        return
+
+    keep_item = get_by_id(keep_id)
+    absorb_item = get_by_id(absorb_id)
+    if keep_item is None or absorb_item is None:
+        missing_id = keep_id if keep_item is None else absorb_id
+        await update.message.reply_text(f"No saved item found with id #{missing_id}.")
+        return
+
+    # Reuses the exact same confirm/decline/view-first flow as an automatic
+    # Combine Mode suggestion (handle_merge_callback in app/bot/handlers.py)
+    # — a manually requested merge and an auto-suggested one work identically
+    # once the two ids are known.
+    keep_title = keep_item["title"] or "Untitled"
+    absorb_title = absorb_item["title"] or "Untitled"
+    await update.message.reply_text(
+        f"Merge #{absorb_id} — {absorb_title} into #{keep_id} — {keep_title}? "
+        f"#{keep_id} will keep its id and absorb #{absorb_id}'s content into one summary.",
+        reply_markup=build_merge_keyboard(keep_id, absorb_id),
+    )
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

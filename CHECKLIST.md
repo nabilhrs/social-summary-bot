@@ -138,3 +138,13 @@ see the "Storage" section above).
 - ✅ Viewing sends a *new* message rather than editing the suggestion, so the original Yes/No/View buttons stay live afterward — viewing never consumes or resets the decision, matching the "not compulsory, just an added option" requirement
 - ✅ Extracted `format_full_item()` (previously private to `/view`) into a shared `app/bot/formatting.py` so both `/view` and this button use identical formatting instead of duplicating it
 - ✅ Verified live: the view button sends a new message with the full related item and does *not* call `edit_message_text` on the original suggestion
+
+### Bonus — automatic paragraph vs. bullets for compact summaries (user-requested, not a planned phase)
+- ✅ The compact-format instruction (Phase 2.4) now lets Gemini pick a single tight paragraph for a single-point note, or a short bullet list when the note clearly lists several distinct points — no new setting or command, the model judges per note
+- ✅ Verified live: a one-line reminder stayed a plain sentence; a 7-item tips list came back bulleted
+
+### Bonus — /merge <keep_id> <absorb_id> for manually merging any two items (user-requested, not a planned phase)
+- ✅ Lets you merge any two saved items on demand, not just ones Combine Mode happened to flag together at save time — closes the gap where two related notes saved far apart, or before Combine Mode existed, had no way to be joined after the fact
+- ✅ First id is the survivor (keeps its row, absorbs the second's content into one summary via the existing `update_merged_summary`); rejects merging an id with itself; reports clearly which id is missing if either doesn't exist
+- ✅ Reuses the exact same confirm/decline/view-first flow as an automatic suggestion (`build_merge_keyboard()`, extracted into `app/bot/formatting.py`, and the existing `handle_merge_callback` — zero new callback-handling code needed since a manual merge and an auto-suggested one are identical once both ids are known)
+- ✅ 9 new tests (two-id parsing, keyboard construction/callback_data correctness); verified live end-to-end against a throwaway copy of the real database — confirm prompt, self-merge rejection, missing-id handling, no-args usage message, view-before-deciding (leaves the prompt untouched), and the actual merge (survivor absorbed the other's content, the absorbed row stayed intact) all behaved correctly

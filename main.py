@@ -23,6 +23,7 @@ from app.bot.commands import (
     list_command,
     search_command,
     view_command,
+    merge_command,
     delete_command,
     undo_command,
     handle_quick_action_callback,
@@ -39,6 +40,7 @@ _BOT_COMMANDS = [
     BotCommand("list", "Show your last saved items"),
     BotCommand("search", "Search your saved items"),
     BotCommand("view", "Show the full summary for a saved item"),
+    BotCommand("merge", "Merge two saved items into one"),
     BotCommand("delete", "Delete a saved item"),
     BotCommand("undo", "Revert a merged item to its pre-merge summary"),
 ]
@@ -68,6 +70,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("view", view_command))
+    app.add_handler(CommandHandler("merge", merge_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("undo", undo_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

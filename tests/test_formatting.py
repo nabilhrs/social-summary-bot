@@ -1,4 +1,4 @@
-from app.bot.formatting import format_full_item
+from app.bot.formatting import format_full_item, build_merge_keyboard
 
 
 def test_format_full_item_basic():
@@ -46,3 +46,20 @@ def test_format_full_item_shows_merged_from():
     }
     text = format_full_item(item)
     assert "Merged from: #2, #3" in text
+
+
+def test_build_merge_keyboard_has_three_buttons_with_correct_callback_data():
+    keyboard = build_merge_keyboard(existing_id=1, new_id=5)
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+
+    assert len(buttons) == 3
+    callback_data = {button.callback_data for button in buttons}
+    assert callback_data == {"merge:yes:1:5", "merge:no:1:5", "merge:view:1:5"}
+
+
+def test_build_merge_keyboard_view_button_mentions_existing_id():
+    keyboard = build_merge_keyboard(existing_id=7, new_id=9)
+    view_button = next(
+        button for row in keyboard.inline_keyboard for button in row if button.callback_data == "merge:view:7:9"
+    )
+    assert "#7" in view_button.text

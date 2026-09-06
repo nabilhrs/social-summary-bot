@@ -8,7 +8,7 @@ URL -> normalize -> summarize (flagging related saved items) -> reply -> save
 import asyncio
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.config import config
@@ -27,7 +27,7 @@ from app.database.database import (
     update_merged_summary,
     delete_item,
 )
-from app.bot.formatting import format_full_item
+from app.bot.formatting import format_full_item, build_merge_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -99,23 +99,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Merge decision is encoded directly in callback_data (merge:<yes|no|view>:<existing_id>:<new_id>)
     # rather than kept in memory — that state must survive a bot restart, and must not depend on
     # which process instance handles the eventual button click.
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("Yes, merge", callback_data=f"merge:yes:{match['id']}:{new_id}"),
-                InlineKeyboardButton("No, keep separate", callback_data=f"merge:no:{match['id']}:{new_id}"),
-            ],
-            [
-                InlineKeyboardButton(
-                    f"👀 View #{match['id']} first", callback_data=f"merge:view:{match['id']}:{new_id}"
-                ),
-            ],
-        ]
-    )
     title = match["title"] or "Untitled"
     await message.reply_text(
         f"This looks related to #{match['id']} — {title}. Want me to merge these into one summary?",
-        reply_markup=keyboard,
+        reply_markup=build_merge_keyboard(match["id"], new_id),
     )
 
 

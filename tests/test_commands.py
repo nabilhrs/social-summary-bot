@@ -3,6 +3,7 @@ from app.bot.commands import (
     _format_item_line,
     _format_item_list,
     _parse_id_arg,
+    _parse_two_id_args,
 )
 
 
@@ -20,6 +21,27 @@ def test_parse_id_arg_invalid():
 
 def test_parse_id_arg_ignores_extra_args():
     assert _parse_id_arg(["5", "extra", "stuff"]) == 5
+
+
+def test_parse_two_id_args_valid():
+    assert _parse_two_id_args(["3", "7"]) == (3, 7)
+
+
+def test_parse_two_id_args_missing_second():
+    assert _parse_two_id_args(["3"]) is None
+
+
+def test_parse_two_id_args_missing_both():
+    assert _parse_two_id_args([]) is None
+
+
+def test_parse_two_id_args_invalid():
+    assert _parse_two_id_args(["3", "abc"]) is None
+    assert _parse_two_id_args(["abc", "3"]) is None
+
+
+def test_parse_two_id_args_ignores_extra_args():
+    assert _parse_two_id_args(["3", "7", "extra"]) == (3, 7)
 
 
 def test_display_title_uses_title_when_present():
