@@ -104,12 +104,14 @@ see the "Storage" section above).
   rejection); verified live with a mocked Telegram update that
   `fetch_and_extract` is never called for these domains
 
-### Phase 2.2 — Retrieval (`/list`, `/search`)
+### Phase 2.2 — Retrieval (`/list`, `/search`, `/view`)
 - ✅ `/list [n]` — last n saved items (default 10, max 50, clamped; invalid input falls back to default)
 - ✅ `/search <keyword>` — case-insensitive substring match across title, summary, and original_text; reports total match count even when results are capped
+- ✅ `/view <id>` — full summary for one item, with metadata (date, source, url if present, merged-from ids if it's a merged entry) — closes the loop so `/list`/`/search` results are actually actionable, not just a dead-end preview
+- ✅ `/list` and `/search` output ends with a "Use /view <id>..." hint for discoverability
 - ✅ Display falls back to a first-line preview of the note when there's no title (most saved items are untitled pasted text)
 - ✅ Output truncates safely under Telegram's 4096-char limit
-- ✅ 19 new tests (DB layer + formatting helpers); verified live against the real database and via mocked command-handler argument parsing (valid/invalid/oversized `/list` counts, empty `/search`, multi-word `/search`, no-match case)
+- ✅ 27 new tests (DB layer + formatting helpers) across this phase; verified live against the real database and via mocked command-handler argument parsing (valid/invalid/oversized `/list` counts, empty `/search`, multi-word `/search`, no-match case, `/view` on a merged entry, missing id, invalid id)
 
 ### Phase 2.3 — Manage entries (`/delete`, `/undo`)
 - ❌ Not started

@@ -1,4 +1,4 @@
-from app.bot.commands import _display_title, _format_item_line, _format_item_list
+from app.bot.commands import _display_title, _format_item_line, _format_item_list, _format_full_item
 
 
 def test_display_title_uses_title_when_present():
@@ -44,3 +44,56 @@ def test_format_item_list_truncates_when_too_long():
     text = _format_item_list(items, "Header:")
     assert len(text) < 3700
     assert "truncated" in text
+
+
+def test_format_item_list_includes_view_hint():
+    items = [{"id": 1, "title": "A", "original_text": "x", "created_at": "2026-09-06T00:00:00+00:00"}]
+    text = _format_item_list(items, "Header:")
+    assert "/view <id>" in text
+
+
+def test_format_full_item_basic():
+    item = {
+        "id": 3,
+        "title": "My Title",
+        "source": "web",
+        "url": "https://example.com/a",
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "merged_from": None,
+        "summary": "TL;DR: something.",
+    }
+    text = _format_full_item(item)
+    assert text.startswith("#3 — My Title\n")
+    assert "Saved: 2026-09-06 · Source: web" in text
+    assert "URL: https://example.com/a" in text
+    assert "Merged from" not in text
+    assert text.endswith("TL;DR: something.")
+
+
+def test_format_full_item_untitled_no_url():
+    item = {
+        "id": 1,
+        "title": None,
+        "source": "pasted_text",
+        "url": None,
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "merged_from": None,
+        "summary": "TL;DR: something.",
+    }
+    text = _format_full_item(item)
+    assert text.startswith("#1 — Untitled\n")
+    assert "URL:" not in text
+
+
+def test_format_full_item_shows_merged_from():
+    item = {
+        "id": 1,
+        "title": "Title",
+        "source": "pasted_text",
+        "url": None,
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "merged_from": "2,3",
+        "summary": "TL;DR: merged.",
+    }
+    text = _format_full_item(item)
+    assert "Merged from: #2, #3" in text
