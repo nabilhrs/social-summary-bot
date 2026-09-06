@@ -4,11 +4,11 @@ Slash-command handlers (PRD 5.6, PRD V2 2.2).
 /summarize is intentionally not implemented — auto-detection in
 app/bot/handlers.py covers both URL and pasted text without a command.
 """
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.config import config
-from app.database.database import list_items, search_items, get_by_id
+from app.database.database import list_items, search_items, get_by_id, undo_merge
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
@@ -27,6 +27,8 @@ HELP_TEXT = (
     "/list [n] — show your last n saved items (default 10, max 50)\n"
     "/search <keyword> — search your saved items\n"
     "/view <id> — show the full summary for a saved item\n"
+    "/delete <id> — delete a saved item (asks for confirmation)\n"
+    "/undo <id> — revert a merged item back to its pre-merge summary\n"
 )
 
 _DEFAULT_LIST_LIMIT = 10
@@ -55,6 +57,15 @@ def _format_item_list(items: list[dict], header: str) -> str:
         text = text[:budget].rsplit("\n", 1)[0]
         text += "\n… (truncated — try a smaller /list count or a narrower /search)"
     return text + _VIEW_HINT
+
+
+def _parse_id_arg(args: list[str]) -> int | None:
+    if not args:
+        return None
+    try:
+        return int(args[0])
+    except ValueError:
+        return None
 
 
 def _format_full_item(item: dict) -> str:
@@ -135,13 +146,8 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Sorry, this bot is private.")
         return
 
-    if not context.args:
-        await update.message.reply_text("Usage: /view <id>")
-        return
-
-    try:
-        item_id = int(context.args[0])
-    except ValueError:
+    item_id = _parse_id_arg(context.args)
+    if item_id is None:
         await update.message.reply_text("Usage: /view <id>")
         return
 
@@ -151,3 +157,60 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(_format_full_item(item))
+
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    item_id = _parse_id_arg(context.args)
+    if item_id is None:
+        await update.message.reply_text("Usage: /delete <id>")
+        return
+
+    item = get_by_id(item_id)
+    if item is None:
+        await update.message.reply_text(f"No saved item found with id #{item_id}.")
+        return
+
+    # Decision is encoded directly in callback_data (delete:<yes|no>:<id>) —
+    # same stateless pattern as the merge flow (see memory.md #5).
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Yes, delete", callback_data=f"delete:yes:{item_id}"),
+                InlineKeyboardButton("No, cancel", callback_data=f"delete:no:{item_id}"),
+            ]
+        ]
+    )
+    title = item["title"] or "Untitled"
+    await update.message.reply_text(
+        f"Delete #{item_id} — {title}? This can't be undone.",
+        reply_markup=keyboard,
+    )
+
+
+async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    item_id = _parse_id_arg(context.args)
+    if item_id is None:
+        await update.message.reply_text("Usage: /undo <id>")
+        return
+
+    item = get_by_id(item_id)
+    if item is None:
+        await update.message.reply_text(f"No saved item found with id #{item_id}.")
+        return
+
+    if item.get("previous_summary") is None:
+        await update.message.reply_text(f"#{item_id} has no merge to undo.")
+        return
+
+    undo_merge(item_id, item["previous_summary"])
+    await update.message.reply_text(f"Reverted #{item_id} to its pre-merge summary.")

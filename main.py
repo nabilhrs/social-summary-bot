@@ -16,8 +16,16 @@ from telegram.ext import (
 )
 
 from app.config import config
-from app.bot.commands import start, help_command, list_command, search_command, view_command
-from app.bot.handlers import handle_message, handle_merge_callback
+from app.bot.commands import (
+    start,
+    help_command,
+    list_command,
+    search_command,
+    view_command,
+    delete_command,
+    undo_command,
+)
+from app.bot.handlers import handle_message, handle_merge_callback, handle_delete_callback
 from app.database.database import init_db
 
 logging.basicConfig(
@@ -41,8 +49,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("view", view_command))
+    app.add_handler(CommandHandler("delete", delete_command))
+    app.add_handler(CommandHandler("undo", undo_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no):\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
     app.add_error_handler(log_error)
 
     return app

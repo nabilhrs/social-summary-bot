@@ -16,14 +16,24 @@ CREATE TABLE IF NOT EXISTS summaries (
     original_text TEXT NOT NULL,
     summary TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    merged_from TEXT
+    merged_from TEXT,
+    previous_summary TEXT
 );
 """
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
 
 
 def init_db() -> None:
     with sqlite3.connect(config.db_path) as conn:
         conn.execute(_SCHEMA)
+        # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
+        # table — migrate databases created before `previous_summary` existed.
+        if not _column_exists(conn, "summaries", "previous_summary"):
+            conn.execute("ALTER TABLE summaries ADD COLUMN previous_summary TEXT")
 
 
 def save_summary(content: dict, summary_text: str) -> int:
@@ -95,16 +105,40 @@ def search_items(keyword: str, limit: int = 10) -> tuple[list[dict], int]:
 
 def update_merged_summary(existing_id: int, summary_text: str, merged_id: int) -> None:
     """Absorb `merged_id` into `existing_id` (PRD 5.5 step 4): replace the
-    existing row's summary, bump created_at, and record the merged-in id."""
+    existing row's summary, bump created_at, and record the merged-in id.
+    The pre-merge summary is snapshotted into `previous_summary` so a single
+    /undo can restore it (PRD V2 2.3) — one level, not a full history stack."""
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(config.db_path) as conn:
         row = conn.execute(
-            "SELECT merged_from FROM summaries WHERE id = ?", (existing_id,)
+            "SELECT summary, merged_from FROM summaries WHERE id = ?", (existing_id,)
         ).fetchone()
-        existing_merged_from = row[0] if row else None
+        previous_summary = row[0] if row else None
+        existing_merged_from = row[1] if row else None
         merged_ids = existing_merged_from.split(",") if existing_merged_from else []
         merged_ids.append(str(merged_id))
         conn.execute(
-            "UPDATE summaries SET summary = ?, created_at = ?, merged_from = ? WHERE id = ?",
-            (summary_text, now, ",".join(merged_ids), existing_id),
+            """
+            UPDATE summaries
+            SET summary = ?, created_at = ?, merged_from = ?, previous_summary = ?
+            WHERE id = ?
+            """,
+            (summary_text, now, ",".join(merged_ids), previous_summary, existing_id),
+        )
+
+
+def delete_item(row_id: int) -> bool:
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute("DELETE FROM summaries WHERE id = ?", (row_id,))
+        return cursor.rowcount > 0
+
+
+def undo_merge(row_id: int, previous_summary: str) -> None:
+    """Revert a merged entry back to its pre-merge summary. `previous_summary`
+    is left in place afterward (no history stack) — calling this again just
+    reapplies the same pre-merge state rather than stepping further back."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "UPDATE summaries SET summary = ?, merged_from = NULL WHERE id = ?",
+            (previous_summary, row_id),
         )

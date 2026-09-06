@@ -20,7 +20,13 @@ from app.extractors.base import (
 )
 from app.extractors.webpage import fetch_and_extract
 from app.ai.summarizer import summarize, merge_summaries
-from app.database.database import save_summary, get_recent, get_by_id, update_merged_summary
+from app.database.database import (
+    save_summary,
+    get_recent,
+    get_by_id,
+    update_merged_summary,
+    delete_item,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -147,3 +153,30 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     await query.edit_message_text(f"Merged into #{old_row['id']}:\n\n{merged.text}")
+
+
+async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+
+    if query is None or query.data is None:
+        return
+    await query.answer()
+
+    if user is None or not config.is_authorized(user.id):
+        await query.edit_message_text(UNAUTHORIZED_TEXT)
+        return
+
+    _, decision, id_str = query.data.split(":")
+    item_id = int(id_str)
+
+    if decision == "no":
+        await query.edit_message_text("Cancelled — nothing deleted.")
+        return
+
+    deleted = await asyncio.to_thread(delete_item, item_id)
+    if not deleted:
+        await query.edit_message_text(f"Couldn't find #{item_id} anymore — nothing deleted.")
+        return
+
+    await query.edit_message_text(f"Deleted #{item_id}.")

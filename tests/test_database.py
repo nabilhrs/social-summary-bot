@@ -191,3 +191,85 @@ def test_search_items_respects_limit_but_reports_total(db_path):
 
     assert len(matches) == 2
     assert total == 5
+
+
+def test_init_db_migrates_existing_table_missing_previous_summary(tmp_path, monkeypatch):
+    path = str(tmp_path / "legacy.db")
+    monkeypatch.setattr(database.config, "db_path", path)
+
+    # Simulate a pre-migration database (no previous_summary column).
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT,
+                source TEXT NOT NULL,
+                title TEXT,
+                author TEXT,
+                original_text TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                merged_from TEXT
+            )
+            """
+        )
+
+    database.init_db()
+
+    with sqlite3.connect(path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(summaries)").fetchall()}
+    assert "previous_summary" in columns
+
+
+def test_init_db_is_idempotent_with_previous_summary_already_present(db_path):
+    # Column already exists (fixture already ran init_db once) — running again
+    # must not raise "duplicate column name".
+    database.init_db()
+
+
+def test_update_merged_summary_snapshots_previous_summary(db_path):
+    old_id = database.save_summary(_make_content("Old", "old body"), "TL;DR: old")
+    new_id = database.save_summary(_make_content("New", "new body"), "TL;DR: new")
+
+    database.update_merged_summary(old_id, "TL;DR: merged", new_id)
+
+    row = database.get_by_id(old_id)
+    assert row["previous_summary"] == "TL;DR: old"
+
+
+def test_delete_item_removes_row_and_returns_true(db_path):
+    row_id = database.save_summary(_make_content("Title", "body"), "TL;DR: x")
+
+    assert database.delete_item(row_id) is True
+    assert database.get_by_id(row_id) is None
+
+
+def test_delete_item_missing_id_returns_false(db_path):
+    assert database.delete_item(999) is False
+
+
+def test_undo_merge_restores_summary_and_clears_merged_from(db_path):
+    old_id = database.save_summary(_make_content("Old", "old body"), "TL;DR: old")
+    new_id = database.save_summary(_make_content("New", "new body"), "TL;DR: new")
+    database.update_merged_summary(old_id, "TL;DR: merged", new_id)
+
+    row = database.get_by_id(old_id)
+    database.undo_merge(old_id, row["previous_summary"])
+
+    reverted = database.get_by_id(old_id)
+    assert reverted["summary"] == "TL;DR: old"
+    assert reverted["merged_from"] is None
+
+
+def test_undo_merge_is_repeatable(db_path):
+    old_id = database.save_summary(_make_content("Old", "old body"), "TL;DR: old")
+    new_id = database.save_summary(_make_content("New", "new body"), "TL;DR: new")
+    database.update_merged_summary(old_id, "TL;DR: merged", new_id)
+    row = database.get_by_id(old_id)
+
+    database.undo_merge(old_id, row["previous_summary"])
+    database.undo_merge(old_id, row["previous_summary"])
+
+    reverted = database.get_by_id(old_id)
+    assert reverted["summary"] == "TL;DR: old"

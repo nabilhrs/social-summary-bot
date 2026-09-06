@@ -114,7 +114,12 @@ see the "Storage" section above).
 - ✅ 27 new tests (DB layer + formatting helpers) across this phase; verified live against the real database and via mocked command-handler argument parsing (valid/invalid/oversized `/list` counts, empty `/search`, multi-word `/search`, no-match case, `/view` on a merged entry, missing id, invalid id)
 
 ### Phase 2.3 — Manage entries (`/delete`, `/undo`)
-- ❌ Not started
+- ✅ Schema migration: nullable `previous_summary` column added via a guarded `ALTER TABLE` (checks `PRAGMA table_info` first) so existing databases upgrade in place on next `init_db()`, without touching a fresh install's `CREATE TABLE`
+- ✅ `/delete <id>` — inline Yes/No confirmation (same stateless `callback_data` pattern as merge, see `memory.md` #5) before removing the row; handles cancel, confirm, and double-delete (already-gone id) cleanly
+- ✅ `update_merged_summary()` now snapshots the pre-merge `summary` into `previous_summary` at merge time
+- ✅ `/undo <id>` — reverts a merged entry to its pre-merge summary and clears `merged_from`; single-level (repeatable, doesn't step further back); correctly reports "no merge to undo" for an item with no snapshot
+- ⚠️ Known limitation (expected, not a bug): merges made *before* this change have no `previous_summary` to restore — `/undo` only works going forward from here
+- ✅ 12 new tests (migration idempotency + correctness, delete, undo); verified live end-to-end (migration against a throwaway copy of the real database, full delete confirm/cancel/double-delete flow, and undo against a freshly created merge) — real `summarizer.db` was never touched during testing
 
 ### Phase 2.4 — Note-style output for short content
 - ❌ Not started

@@ -1,4 +1,26 @@
-from app.bot.commands import _display_title, _format_item_line, _format_item_list, _format_full_item
+from app.bot.commands import (
+    _display_title,
+    _format_item_line,
+    _format_item_list,
+    _format_full_item,
+    _parse_id_arg,
+)
+
+
+def test_parse_id_arg_valid():
+    assert _parse_id_arg(["5"]) == 5
+
+
+def test_parse_id_arg_missing():
+    assert _parse_id_arg([]) is None
+
+
+def test_parse_id_arg_invalid():
+    assert _parse_id_arg(["abc"]) is None
+
+
+def test_parse_id_arg_ignores_extra_args():
+    assert _parse_id_arg(["5", "extra", "stuff"]) == 5
 
 
 def test_display_title_uses_title_when_present():
