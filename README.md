@@ -1,9 +1,17 @@
 # Social Summary Bot
 
-A personal Telegram bot that takes pasted text or a web article URL, generates
-a structured AI summary via Gemini, and saves it to a local SQLite database.
+A personal Telegram bot that takes a URL — articles, Threads posts, TikTok
+videos — or pasted text, generates an AI summary via Gemini, and saves it
+to a local SQLite database. Related saves get offered a merge instead of
+piling up as duplicates, and everything you save can be listed, searched,
+viewed, merged, or deleted back from Telegram itself.
 
-See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the full spec.
+See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the original
+spec and [summarizer_bot_prd_v2.md](summarizer_bot_prd_v2.md) for what's
+been added since. [CHECKLIST.md](CHECKLIST.md) is the up-to-date status of
+every feature. [memory.md](memory.md) logs bugs found through real use and
+why they happened — worth a read before touching the extraction or
+Combine Mode code.
 
 ## Setup
 
@@ -17,6 +25,9 @@ See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the full spec.
    ```
    venv\Scripts\pip install -r requirements.txt
    ```
+   This includes `yt-dlp` with its browser-impersonation extra (needed to
+   get past TikTok's bot-challenge), which pulls in a few extra packages —
+   the install takes a little longer than a typical Python project.
 3. Copy `.env.example` to `.env` and fill in:
    - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
    - `AUTHORIZED_USER_ID` — your numeric Telegram user ID, from [@userinfobot](https://t.me/userinfobot)
@@ -28,11 +39,37 @@ See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the full spec.
 
 ## Usage
 
-Message the bot directly:
-- **Paste text** — summarized as-is.
-- **Send a URL** — the bot fetches and extracts the article, then summarizes it.
+Message the bot directly, or tap a command from Telegram's "/" menu:
+
+- **Paste text** — summarized as-is. Short notes (under ~80 words) get a
+  tight 1-3 sentence summary; longer content gets the full
+  TL;DR / KEY POINTS / TAKEAWAY structure.
+- **Send a URL** — the bot fetches and summarizes it:
+  - Regular web articles are extracted with `trafilatura`.
+  - **Threads** posts are read via their public Open Graph tags (the same
+    mechanism every app uses for link previews) — this only captures the
+    linked post's own caption, not replies, so the bot always notes that
+    limitation.
+  - **TikTok** videos are downloaded and actually watched — Gemini
+    summarizes what's shown and said, not just the caption. This takes
+    noticeably longer (expect 30s+); the bot sends a heads-up while it
+    works.
+- **Combine Mode** — if new content looks related to something already
+  saved, the bot offers to merge them into one summary instead of leaving
+  duplicates, with an optional "view first" button if you don't remember
+  the older item. You can also trigger a merge yourself with `/merge`.
 
 Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`).
+Commands for managing what's saved:
+
+| Command | Does |
+|---|---|
+| `/list [n]` | Last `n` saved items (default 10, max 50), with a quick-delete button per item |
+| `/search <keyword>` | Search saved items by keyword |
+| `/view <id>` | Full summary for one item |
+| `/merge <keep_id> <absorb_id>` | Merge two items into one (asks for confirmation) |
+| `/delete <id>` | Delete an item (asks for confirmation) |
+| `/undo <id>` | Revert a merged item to its pre-merge summary |
 
 ## Tests
 
@@ -40,8 +77,33 @@ Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`).
 venv\Scripts\pytest
 ```
 
+Pure logic (parsing, formatting, database queries) is unit tested.
+Network- and filesystem-dependent extraction (web/Threads/TikTok fetches,
+Gemini calls) is verified live rather than mocked — see the commit history
+and `memory.md` for what's been checked and how.
+
 ## Project structure
 
-See section 7 of the PRD. Build order (section 8) is complete through
-step 5 (error handling); Combine Mode (5.5) is not implemented — per the
-PRD's own cut criterion, it's the first thing dropped under time pressure.
+```
+social-summary-bot/
+├── app/
+│   ├── bot/
+│   │   ├── commands.py      # slash commands
+│   │   ├── handlers.py      # plain-message pipeline + merge/delete callbacks
+│   │   └── formatting.py    # shared display/keyboard builders
+│   ├── extractors/
+│   │   ├── base.py          # URL routing, normalization
+│   │   ├── webpage.py       # generic articles (trafilatura)
+│   │   ├── threads.py       # Threads posts (Open Graph tags)
+│   │   └── tiktok.py        # TikTok videos (yt-dlp + Gemini video understanding)
+│   ├── ai/
+│   │   ├── summarizer.py
+│   │   └── prompts.py
+│   ├── database/
+│   │   └── database.py
+│   └── config.py
+├── tests/
+├── .env / .env.example
+├── requirements.txt
+└── main.py
+```
