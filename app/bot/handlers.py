@@ -15,10 +15,13 @@ from app.config import config
 from app.extractors.base import (
     looks_like_url,
     detect_unsupported_platform,
+    is_threads_url,
     normalize_pasted_text,
     normalize_web_article,
+    normalize_threads_post,
 )
 from app.extractors.webpage import fetch_and_extract
+from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
     save_summary,
@@ -42,6 +45,12 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
+PARTIAL_THREAD_NOTE = (
+    "⚠️ Heads up — this looks like part of a multi-part thread. I can only read "
+    "the post you linked, not any follow-up replies (Threads loads those via "
+    "JavaScript, which a plain link fetch can't see). Paste the rest of the "
+    "thread's text too if you want a complete summary."
+)
 
 # PRD 5.5 — how many recent saved items to check new content against.
 _RECENT_HISTORY_LIMIT = 10
@@ -63,17 +72,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(INVALID_INPUT_TEXT)
         return
 
+    is_partial_thread = False
+
     if looks_like_url(raw_text):
         platform = detect_unsupported_platform(raw_text)
         if platform is not None:
             await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
             return
 
-        extracted = await fetch_and_extract(raw_text)
-        if extracted is None:
-            await message.reply_text(EXTRACTION_FAILED_TEXT)
-            return
-        content = normalize_web_article(raw_text, extracted)
+        if is_threads_url(raw_text):
+            extracted = await fetch_threads_post(raw_text)
+            if extracted is None:
+                await message.reply_text(EXTRACTION_FAILED_TEXT)
+                return
+            is_partial_thread = extracted["is_partial_thread"]
+            content = normalize_threads_post(raw_text, extracted)
+        else:
+            extracted = await fetch_and_extract(raw_text)
+            if extracted is None:
+                await message.reply_text(EXTRACTION_FAILED_TEXT)
+                return
+            content = normalize_web_article(raw_text, extracted)
     else:
         content = normalize_pasted_text(raw_text)
 
@@ -85,6 +104,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     await message.reply_text(summary.text)
+    if is_partial_thread:
+        await message.reply_text(PARTIAL_THREAD_NOTE)
 
     try:
         new_id = await asyncio.to_thread(save_summary, content, summary.text)

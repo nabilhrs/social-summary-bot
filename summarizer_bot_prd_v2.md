@@ -1,6 +1,9 @@
 # PRD — Personal Content Summarizer Bot (V2)
 
-**Status:** Draft, scoping in progress
+**Status:** All four phases shipped, plus several user-requested additions
+beyond the original scope (clickable commands, view-before-merge, manual
+`/merge`, automatic paragraph/bullets, and a revised Threads approach —
+see section 3 and `CHECKLIST.md` for full detail on each)
 **Owner:** Nabil
 **Last updated:** 2026-09-06
 **Supersedes:** `summarizer_bot_prd_v1.md` (V1 is complete and live — see `CHECKLIST.md`)
@@ -33,41 +36,55 @@ and extend capture to Threads/TikTok links where realistically possible.
 Phased by value-to-effort, cheapest and highest-value first. Each phase is
 independently shippable — nothing here depends on a later phase.
 
-### Phase 2.1 — Platform-aware fallback for Threads / TikTok
+### Phase 2.1 — Platform-aware fallback for TikTok, real extraction for Threads
 
-**What this is *not*:** automated scraping of Threads or TikTok content.
-V1's Appendix A already found that Meta's oEmbed terms explicitly prohibit
-using post data for anything beyond rendering an embed — plugging that into
-a summarizer would be a ToS violation, not just "fragile." TikTok has no
-official API for this either; the only working approach is unofficial
-scraping or `yt-dlp` + Whisper transcription, both fragile and a real
-maintenance burden. Building either isn't the right trade-off for a
-personal tool that breaks the platform's terms to do it.
+**Originally scoped as:** an honest fallback for *both* Threads and TikTok
+— no extraction for either, just a fast, platform-specific "paste the text
+yourself" reply instead of a doomed generic fetch. That shipped first and
+is still exactly right for **TikTok**: no official API for third-party
+content retrieval, and live testing (see below) showed TikTok pushes back
+on automated access harder than Threads does. TikTok video summarization
+was discussed and explicitly deferred — the user's own call when asked
+directly, not a technical dead end (see the addendum below for what it
+would actually take).
 
-**What this is:** a much better *fallback* than what exists today. Right
-now, sending a Threads/TikTok link makes the bot attempt a generic
-`httpx` fetch, which fails (or returns useless embed-wrapper HTML), and you
-get the generic "I couldn't extract this" message. Instead:
+**Revised for Threads**, after live testing turned up a distinction the
+original research missed: the "Meta prohibits this" finding was about the
+**oEmbed API** specifically, whose terms restrict use to rendering an
+embed. **Open Graph meta tags** (`og:title`, `og:description`) are a
+different, universal web standard every site uses for link previews — the
+same mechanism Slack, iMessage, and Discord use to show a preview when you
+paste a link. Reading them via a normal HTTP fetch — exactly what this bot
+already does for every other website — isn't the restricted mechanism at
+all.
 
-- Detect Threads (`threads.net`, `threads.com`) and TikTok
-  (`tiktok.com`, `vt.tiktok.com`) URLs by domain *before* attempting a
-  generic fetch.
-- Reply immediately with a platform-specific message, e.g.: *"Threads
-  doesn't allow me to pull post content automatically — paste the post
-  text here and I'll summarize it."*
-- No wasted fetch attempt, no confusing error, and it's honest about *why*
-  rather than implying it's a bug.
+Verified live (via browser, on real public posts, before writing any
+code): a Threads post permalink's raw, un-rendered HTML contains the full
+caption in `og:description` — confirmed on a multi-paragraph post with an
+emoji, no truncation. Also verified: **replies are not reachable this
+way** — a root post's raw HTML has zero trace of its own replies' text or
+ids, since Threads hydrates those entirely via client-side JS after the
+page loads. Getting them would need a full headless browser or reverse-
+engineering a private API — both rejected as disproportionate for what
+they'd buy.
 
-This is a small, safe, immediate win — it directly fixes the papercut of
-today's generic failure message for the exact links you said you want to
-send, without building something that breaks Meta's/TikTok's terms.
+**What got built:** `app/extractors/threads.py` — reads `og:description`
+(caption) and derives the author from `og:title`. A `source: "threads"`
+value distinguishes these from regular web articles in `/view`. Since the
+reply chain isn't reachable, a numbered multi-part post (`(1/4)`, `part 2
+of 5`) is detected and the bot summarizes what it has, then follows up
+with an honest heads-up that it's only reading one part — rather than
+silently presenting a fragment as if it were the whole story.
 
-**If you still want real extraction later:** it's possible (unofficial
-scraping libraries exist for both), but it should be a deliberate, separate
-decision — not something bundled into a "make Threads work" ask — because
-it carries real ToS and account-ban risk for personal accounts, and breaks
-whenever the platform changes its defenses. Flagging this explicitly rather
-than quietly deciding it for you.
+**Addendum — what real TikTok video summarization would take**, for the
+record: downloading the video (`yt-dlp`) and feeding it directly to
+Gemini's multimodal API (no separate Whisper step needed with current
+models). Technically buildable, but downloading TikTok videos isn't
+something TikTok's terms permit, it's a new dependency with real
+engineering lift (large file handling, longer processing, higher Gemini
+cost for video tokens), and TikTok actively resists automated access more
+than Threads does — matches this PRD's original caution, now with a live
+data point behind it rather than just prior research.
 
 ### Phase 2.2 — Retrieval: `/list` and `/search`
 
@@ -114,8 +131,11 @@ a 3-sentence tip. Proposal:
 ## 4. Explicitly Out of Scope (V2)
 
 Carried over from V1 (still true), plus:
-- Automated Threads/TikTok content extraction (see Phase 2.1 — a
-  deliberate non-goal, not a deferral)
+- Automated TikTok video download/transcription — explicitly deferred by
+  the user's own choice, not a technical dead end (see Phase 2.1 addendum)
+- Full multi-part Threads thread stitching — not achievable without a
+  headless browser or reverse-engineering a private API; the bot flags a
+  detected partial thread instead of attempting to reconstruct it
 - Real embeddings/vector search — Combine Mode's recent-history approach
   is still working well at current volume
 - Tags, categories, web dashboard, multi-user support

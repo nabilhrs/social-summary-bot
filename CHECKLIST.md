@@ -93,16 +93,54 @@ see the "Storage" section above).
 ## V2 Progress (vs. `summarizer_bot_prd_v2.md`)
 
 ### Phase 2.1 — Platform-aware fallback for Threads / TikTok
-- ✅ `detect_unsupported_platform()` recognizes `threads.net`/`.com` and
-  `tiktok.com` (incl. `vt.`/`vm.`/`www.` subdomains), case-insensitively,
-  without false-matching lookalike domains
-- ✅ Wired into `handle_message` *before* the generic fetch attempt — no
-  wasted request, immediate platform-specific reply
-- ✅ Deliberately does **not** attempt extraction (see PRD 2.1 rationale —
-  Meta's oEmbed terms don't permit it, no official TikTok API exists)
-- ✅ 5 new tests (domain matching, case-insensitivity, lookalike-domain
-  rejection); verified live with a mocked Telegram update that
-  `fetch_and_extract` is never called for these domains
+- ✅ `detect_unsupported_platform()` recognizes `tiktok.com` (incl.
+  `vt.`/`vm.`/`www.` subdomains), case-insensitively, without
+  false-matching lookalike domains — wired into `handle_message` *before*
+  the generic fetch attempt, immediate platform-specific reply, no wasted
+  request
+- ✅ TikTok deliberately does **not** attempt extraction (no official API
+  for third-party content retrieval, and live testing during the Threads
+  investigation below showed TikTok pushes back on automated access more
+  aggressively than Threads does) — explicitly deferred, not built, per
+  the user's own choice when asked
+- ⚠️ **Revised for Threads** — see below, no longer in the unsupported list
+- ✅ Tests + live verification for the remaining TikTok-only fallback
+
+### Revision — real Threads extraction via Open Graph tags (supersedes the original Phase 2.1 Threads fallback)
+- **Why revisited:** the original "unsupported" verdict was about the
+  oEmbed *API* specifically, whose terms restrict use to rendering an
+  embed. Open Graph meta tags are a different, universal web standard
+  every site uses for link previews (the same mechanism Slack/iMessage/
+  Discord use) — reading them via a normal HTTP fetch isn't the same
+  restricted mechanism, and isn't scraping in the ToS-violating sense.
+- ✅ Verified live (via the in-app browser, on real public posts) before
+  writing any code: a Threads post permalink's raw, un-rendered HTML
+  contains the full caption in `og:description` — confirmed on both a
+  short post and a ~270-character multi-paragraph post with an emoji,
+  with no truncation
+- ✅ Also verified live: the reply chain is **not** reachable this way — a
+  root post's raw HTML contains zero trace of its own replies' text or
+  post ids. Threads hydrates those entirely via client-side JS after load,
+  so getting them would require a full headless browser or reverse-
+  engineering a private API — both rejected as disproportionate/ToS-risky
+- ✅ New `app/extractors/threads.py`: parses `og:description` (the
+  caption) and `og:title` (used to derive the author name) via regex,
+  HTML-entity-unescaped; detects a numbered multi-part post (`(1/4)`,
+  `part 2 of 5`) via `looks_like_partial_thread()`
+- ✅ New `source: "threads"` value (`normalize_threads_post()`) distinct
+  from `"web"`/`"pasted_text"`, so `/view` shows where content actually
+  came from
+- ✅ When a partial-thread pattern is detected, the bot still summarizes
+  what it has but follows up with an honest heads-up rather than silently
+  presenting 1/4 of a story as complete — explicitly the user's own
+  requirement when asked about multi-part threads
+- ✅ 16 new tests (OG-tag parsing incl. entity-unescaping and missing/empty
+  cases, author extraction, partial-thread regex, domain routing,
+  normalization); verified live end-to-end: real network fetch against an
+  actual public Threads post (exact text matched what the browser check
+  found), and the full message-handling pipeline with a mocked partial-part
+  post, confirming the summary and the heads-up arrive as two separate,
+  correctly-ordered messages
 
 ### Phase 2.2 — Retrieval (`/list`, `/search`, `/view`)
 - ✅ `/list [n]` — last n saved items (default 10, max 50, clamped; invalid input falls back to default)

@@ -1,8 +1,10 @@
 from app.extractors.base import (
     looks_like_url,
     detect_unsupported_platform,
+    is_threads_url,
     normalize_pasted_text,
     normalize_web_article,
+    normalize_threads_post,
 )
 
 
@@ -52,9 +54,12 @@ def test_normalize_web_article_missing_metadata():
     assert content["author"] is None
 
 
-def test_detect_unsupported_platform_threads():
-    assert detect_unsupported_platform("https://www.threads.net/@user/post/123") == "Threads"
-    assert detect_unsupported_platform("https://threads.com/@user/post/123") == "Threads"
+def test_detect_unsupported_platform_no_longer_flags_threads():
+    # PRD V2 2.1 revision: Threads gets real extraction via Open Graph tags
+    # now (app/extractors/threads.py), so it's no longer in the "can't
+    # extract at all" bucket — only genuinely unsupported platforms are.
+    assert detect_unsupported_platform("https://www.threads.net/@user/post/123") is None
+    assert detect_unsupported_platform("https://threads.com/@user/post/123") is None
 
 
 def test_detect_unsupported_platform_tiktok():
@@ -77,3 +82,27 @@ def test_detect_unsupported_platform_rejects_lookalike_domains():
     # subdomain) must not match — e.g. a phishing/lookalike domain.
     assert detect_unsupported_platform("https://tiktok.com.evil.example/x") is None
     assert detect_unsupported_platform("https://nottiktok.com/x") is None
+
+
+def test_is_threads_url_matches_both_domains_and_subdomains():
+    assert is_threads_url("https://www.threads.net/@user/post/123")
+    assert is_threads_url("https://threads.com/@user/post/123")
+    assert is_threads_url("https://WWW.THREADS.NET/@user/post/123")
+
+
+def test_is_threads_url_rejects_other_sites():
+    assert not is_threads_url("https://example.com/article")
+    assert not is_threads_url("https://tiktok.com/@user/video/1")
+    assert not is_threads_url("https://threads.com.evil.example/x")
+
+
+def test_normalize_threads_post():
+    extracted = {"author": "Jane Doe", "text": "post caption", "is_partial_thread": False}
+    content = normalize_threads_post("https://www.threads.net/@jane/post/123", extracted)
+    assert content == {
+        "title": None,
+        "author": "Jane Doe",
+        "source": "threads",
+        "url": "https://www.threads.net/@jane/post/123",
+        "text": "post caption",
+    }
