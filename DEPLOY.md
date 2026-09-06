@@ -28,9 +28,27 @@ From the OCI console: **Compute → Instances → Create Instance**.
   reliably available — the ARM shape's free capacity is sometimes hard to
   provision in busy regions; if you hit a capacity error, either retry, try
   another region, or fall back to the AMD shape)
-- **Networking:** the default VCN's security list only needs to allow
-  inbound SSH (port 22, already the default) — nothing else, since the bot
-  never receives inbound connections
+- **Networking:** every Compute instance must attach to a subnet inside a
+  Virtual Cloud Network (VCN) — on a brand-new account you likely don't
+  have one yet, so:
+  - Look for a **"Create new virtual cloud network"** option in this
+    section (sometimes a radio button next to "Select existing virtual
+    cloud network"). If present, pick it and accept the defaults — OCI
+    auto-creates a VCN with a public subnet, an internet gateway, and a
+    security list that already allows inbound SSH. Nothing further to do
+    here.
+  - If no auto-create option is offered, create one first: open
+    **Networking → Virtual Cloud Networks → Start VCN Wizard**, choose the
+    **"VCN with Internet Connectivity"** template (not "VCN Only" — that
+    template skips the internet gateway you need to reach the instance at
+    all), give it any name, and click Create. Then go back to instance
+    creation and select that VCN's **public** subnet (named something like
+    `Public Subnet-<vcn-name>`).
+  - Either way, make sure **"Assign a public IPv4 address"** is checked —
+    without it you have no address to SSH to.
+  - No other networking changes are needed — the bot only makes outbound
+    connections (long-polling Telegram), so port 22 (SSH, already open by
+    default) is the only inbound rule that ever matters here.
 - Add your SSH public key when prompted (or let OCI generate a keypair for
   you and download the private key)
 
