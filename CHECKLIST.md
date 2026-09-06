@@ -87,3 +87,28 @@ short, informal, mixed-language snippets, not long-form articles. The bot
 works for both, but nothing in the product is optimized for the notes case
 specifically (e.g. there's no way to read saved notes back from Telegram —
 see the "Storage" section above).
+
+---
+
+## V2 Progress (vs. `summarizer_bot_prd_v2.md`)
+
+### Phase 2.1 — Platform-aware fallback for Threads / TikTok
+- ✅ `detect_unsupported_platform()` recognizes `threads.net`/`.com` and
+  `tiktok.com` (incl. `vt.`/`vm.`/`www.` subdomains), case-insensitively,
+  without false-matching lookalike domains
+- ✅ Wired into `handle_message` *before* the generic fetch attempt — no
+  wasted request, immediate platform-specific reply
+- ✅ Deliberately does **not** attempt extraction (see PRD 2.1 rationale —
+  Meta's oEmbed terms don't permit it, no official TikTok API exists)
+- ✅ 5 new tests (domain matching, case-insensitivity, lookalike-domain
+  rejection); verified live with a mocked Telegram update that
+  `fetch_and_extract` is never called for these domains
+
+### Phase 2.2 — Retrieval (`/list`, `/search`)
+- ❌ Not started
+
+### Phase 2.3 — Manage entries (`/delete`, `/undo`)
+- ❌ Not started
+
+### Phase 2.4 — Note-style output for short content
+- ❌ Not started

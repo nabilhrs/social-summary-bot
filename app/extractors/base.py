@@ -12,6 +12,25 @@ def looks_like_url(text: str) -> bool:
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
+# PRD V2 2.1 — platforms whose terms don't allow extracting post content
+# (Threads' oEmbed terms restrict use to rendering an embed; TikTok has no
+# public API for this at all). Detected up front so we skip a doomed fetch
+# and give an honest, platform-specific fallback instead of a generic one.
+_UNSUPPORTED_PLATFORM_DOMAINS = {
+    "threads.net": "Threads",
+    "threads.com": "Threads",
+    "tiktok.com": "TikTok",
+}
+
+
+def detect_unsupported_platform(url: str) -> str | None:
+    hostname = (urlparse(url).hostname or "").lower()
+    for domain, platform in _UNSUPPORTED_PLATFORM_DOMAINS.items():
+        if hostname == domain or hostname.endswith(f".{domain}"):
+            return platform
+    return None
+
+
 def normalize_pasted_text(text: str) -> dict:
     return {
         "title": None,

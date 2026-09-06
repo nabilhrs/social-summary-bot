@@ -12,7 +12,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.config import config
-from app.extractors.base import looks_like_url, normalize_pasted_text, normalize_web_article
+from app.extractors.base import (
+    looks_like_url,
+    detect_unsupported_platform,
+    normalize_pasted_text,
+    normalize_web_article,
+)
 from app.extractors.webpage import fetch_and_extract
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import save_summary, get_recent, get_by_id, update_merged_summary
@@ -24,6 +29,10 @@ UNAUTHORIZED_TEXT = "Sorry, this bot is private."
 INVALID_INPUT_TEXT = "That doesn't look like a link or usable text."
 EXTRACTION_FAILED_TEXT = (
     "I couldn't extract this article automatically. Please paste the text here and I'll summarize it."
+)
+UNSUPPORTED_PLATFORM_TEXT = (
+    "{platform} doesn't allow me to pull post content automatically. "
+    "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
 
@@ -48,6 +57,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if looks_like_url(raw_text):
+        platform = detect_unsupported_platform(raw_text)
+        if platform is not None:
+            await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
+            return
+
         extracted = await fetch_and_extract(raw_text)
         if extracted is None:
             await message.reply_text(EXTRACTION_FAILED_TEXT)
