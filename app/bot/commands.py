@@ -139,7 +139,7 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     _, action = query.data.split(":", 1)
     if action == "list":
-        items = list_items(_DEFAULT_LIST_LIMIT)
+        items = list_items(user_id, _DEFAULT_LIST_LIMIT)
         if not items:
             await query.message.reply_text("You haven't saved anything yet.")
             return
@@ -165,7 +165,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             pass
     limit = max(1, min(limit, _MAX_LIST_LIMIT))
 
-    items = list_items(limit)
+    items = list_items(user_id, limit)
     if not items:
         await update.message.reply_text("You haven't saved anything yet.")
         return
@@ -187,7 +187,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     keyword = " ".join(context.args)
-    items, total = search_items(keyword, limit=_DEFAULT_LIST_LIMIT)
+    items, total = search_items(user_id, keyword, limit=_DEFAULT_LIST_LIMIT)
     if not items:
         await update.message.reply_text(f"No matches found for \"{keyword}\".")
         return
@@ -208,7 +208,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Usage: /view <id>")
         return
 
-    item = get_by_id(item_id)
+    item = get_by_id(item_id, user_id)
     if item is None:
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
@@ -232,8 +232,8 @@ async def merge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Can't merge an item with itself.")
         return
 
-    keep_item = get_by_id(keep_id)
-    absorb_item = get_by_id(absorb_id)
+    keep_item = get_by_id(keep_id, user_id)
+    absorb_item = get_by_id(absorb_id, user_id)
     if keep_item is None or absorb_item is None:
         missing_id = keep_id if keep_item is None else absorb_id
         await update.message.reply_text(f"No saved item found with id #{missing_id}.")
@@ -263,7 +263,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Usage: /delete <id>")
         return
 
-    item = get_by_id(item_id)
+    item = get_by_id(item_id, user_id)
     if item is None:
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
@@ -293,7 +293,7 @@ async def handle_delete_request_callback(update: Update, context: ContextTypes.D
     _, id_str = query.data.split(":")
     item_id = int(id_str)
 
-    item = get_by_id(item_id)
+    item = get_by_id(item_id, user_id)
     if item is None:
         await query.message.reply_text(f"Couldn't find #{item_id} anymore.")
         return
@@ -316,7 +316,7 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Usage: /undo <id>")
         return
 
-    item = get_by_id(item_id)
+    item = get_by_id(item_id, user_id)
     if item is None:
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
@@ -325,5 +325,5 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"#{item_id} has no merge to undo.")
         return
 
-    undo_merge(item_id, item["previous_summary"])
+    undo_merge(item_id, item["previous_summary"], user_id)
     await update.message.reply_text(f"Reverted #{item_id} to its pre-merge summary.")

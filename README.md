@@ -1,10 +1,14 @@
 # Social Summary Bot
 
-A personal Telegram bot that takes a URL — articles, Threads posts, TikTok
-videos — or pasted text, generates an AI summary via Gemini, and saves it
-to a local SQLite database. Related saves get offered a merge instead of
-piling up as duplicates, and everything you save can be listed, searched,
-viewed, merged, or deleted back from Telegram itself.
+A Telegram bot that takes a URL — articles, Threads posts, TikTok videos —
+or pasted text, generates an AI summary via Gemini, and saves it to a local
+SQLite database. Related saves get offered a merge instead of piling up as
+duplicates, and everything you save can be listed, searched, viewed,
+merged, or deleted back from Telegram itself.
+
+Multiple people can use the same bot — each person's saved items are
+private to them, gated by a hardcoded allowlist (not open to the public
+internet; see Setup).
 
 See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the original
 spec and [summarizer_bot_prd_v2.md](summarizer_bot_prd_v2.md) for what's
@@ -30,8 +34,15 @@ Combine Mode code.
    the install takes a little longer than a typical Python project.
 3. Copy `.env.example` to `.env` and fill in:
    - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-   - `AUTHORIZED_USER_ID` — your numeric Telegram user ID, from [@userinfobot](https://t.me/userinfobot)
-   - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey)
+   - `AUTHORIZED_USER_IDS` — comma-separated numeric Telegram user IDs allowed
+     to use the bot (get an ID from [@userinfobot](https://t.me/userinfobot)).
+     List yourself first — on first run after adding more people, any
+     pre-existing saved items are assigned to whichever ID is listed first.
+     Every listed user gets their own private saved items; no one sees
+     anyone else's.
+   - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey).
+     All usage across every authorized user runs on this one key — there's no
+     per-user quota, so anyone you add can consume your Gemini usage/cost.
 4. Run the bot:
    ```
    venv\Scripts\python main.py
@@ -59,8 +70,10 @@ Message the bot directly, or tap a command from Telegram's "/" menu:
   duplicates, with an optional "view first" button if you don't remember
   the older item. You can also trigger a merge yourself with `/merge`.
 
-Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`).
-Commands for managing what's saved:
+Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`),
+scoped to the Telegram user who saved it — Combine Mode's related-item
+check and every command below only ever see and act on your own items,
+never another authorized user's. Commands for managing what's saved:
 
 | Command | Does |
 |---|---|

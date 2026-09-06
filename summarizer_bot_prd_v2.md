@@ -156,6 +156,36 @@ a 3-sentence tip. Proposal:
   Combine Mode's `RELATED_ID` mechanism works the same regardless of which
   format was used.
 
+### Major revision — multi-user support (V1's "multi-user support beyond
+one hardcoded ID" exclusion reversed)
+
+The user asked to make the bot "publicly available to be used by anyone on
+Telegram." Before writing any code, the real implications were laid out
+plainly: the database had zero per-user data isolation (anyone let in
+could see, search, merge, or delete *your* notes too), the owner's Gemini
+API key pays for every request with no per-user cap (a public TikTok video
+call is the most expensive kind), TikTok downloading at true public scale
+is a materially different risk than one person's personal use, and the bot
+only runs while the owner's own machine does — "public" doesn't mean
+"always on" for free.
+
+Scoped down deliberately after that: **a private allowlist of multiple
+people, each with fully isolated data, no usage caps for now** — not
+literally open to anyone on the internet. `AUTHORIZED_USER_IDS` (ordered,
+comma-separated) replaces the single `AUTHORIZED_USER_ID`; a new `user_id`
+column (backfilled via migration, owned by whichever id is listed first)
+scopes every database function and every command/callback to the calling
+user. Verified live with two distinct simulated users sharing one process
+and database: each `/list` showed only that user's own item, and every
+attempt by one user to `/view`, `/delete`, or `/merge` the *other* user's
+real, existing item was correctly refused — the property this whole
+change exists to guarantee.
+
+**Consciously not built:** per-user rate limiting/usage caps, and hosting
+beyond "runs on whoever starts `main.py`" — both explicitly accepted as
+known gaps rather than silently ignored, since the user said not to worry
+about cost right now.
+
 ## 4. Explicitly Out of Scope (V2)
 
 Carried over from V1 (still true), plus:
@@ -165,7 +195,9 @@ Carried over from V1 (still true), plus:
   applies (see Phase 2.1 — detection was tried and abandoned as unreliable)
 - Real embeddings/vector search — Combine Mode's recent-history approach
   is still working well at current volume
-- Tags, categories, web dashboard, multi-user support
+- Tags, categories, web dashboard
+- Per-user rate limiting/usage caps, and dedicated hosting — both accepted
+  as known gaps in the multi-user revision above, not oversights
 
 ## 5. Open questions before implementation
 

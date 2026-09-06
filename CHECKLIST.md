@@ -243,3 +243,52 @@ see the "Storage" section above).
   filesystem-dependent like the other extractors, so it was verified live
   rather than mocked, consistent with the rest of this project's testing
   approach
+
+### Major revision — multi-user support with per-user data isolation (user-requested, not a planned phase)
+- **Why:** the user asked to make the bot "publicly available to be used
+  by anyone." Given the risks discussed and confirmed with the user first
+  (no per-user data isolation existed at all; the owner's Gemini key
+  would foot the bill for every user with no cap; TikTok downloading at
+  true public scale is a different risk category than one person's
+  personal use; the bot only runs while the owner's own machine does),
+  this landed as **a private allowlist of multiple people, each with
+  fully isolated data, no usage caps for now** — not literally open to
+  anyone on Telegram.
+- ✅ `AUTHORIZED_USER_IDS` (comma-separated, ordered) replaces the old
+  singular `AUTHORIZED_USER_ID` — `config.is_authorized()` now checks
+  list membership; `.env`, `.env.example`, and the real local `.env` all
+  updated
+- ✅ New `user_id` column on `summaries`, backfilled via a guarded
+  migration (same pattern as `previous_summary`) — pre-existing rows are
+  assigned to whichever id is *first* in `AUTHORIZED_USER_IDS`, i.e. the
+  original solo owner
+- ✅ Every database function now takes an explicit `user_id` and scopes
+  its query to it: `save_summary`, `get_recent`, `get_by_id`, `list_items`,
+  `search_items`, `update_merged_summary`, `delete_item`, `undo_merge`.
+  `get_by_id` in particular checks `id AND user_id` together, not just
+  `id` — the specific thing that stops one user from viewing, merging,
+  undoing, or deleting another user's row even by guessing its numeric id
+- ✅ Every call site in `app/bot/commands.py` and `app/bot/handlers.py`
+  updated to pass `update.effective_user.id` through — Combine Mode's
+  related-item check, the plain-message save, and all six management
+  commands (`/list`, `/search`, `/view`, `/merge`, `/delete`, `/undo`)
+  plus their button-triggered callback equivalents
+- ✅ 8 new isolation-specific tests at the database layer (cross-user
+  `get_recent`/`list_items`/`search_items` exclusion; `get_by_id` and
+  `delete_item` returning "not found" for another user's real row;
+  `update_merged_summary`/`undo_merge` refusing to touch another user's
+  row) plus a migration test confirming legacy rows backfill to the
+  first configured id
+- ✅ Verified live end-to-end with two distinct simulated Telegram user
+  ids sharing one bot process and one database: `/list` for each user
+  showed only their own item; User B's `/view`, `/delete`, and `/merge`
+  attempts against User A's real, existing item were all correctly
+  refused with "not found" rather than silently succeeding or leaking
+  data — the critical security property this whole change exists for
+- ⚠️ **Known, accepted gaps** (explicitly signed off on by the user
+  rather than silently decided): no per-user usage caps or rate limiting
+  on Gemini API calls — one heavy user (especially via the TikTok video
+  path, the most expensive call) can consume the owner's entire quota/
+  budget; no dedicated hosting — the bot still only runs while the
+  owner's own machine does, so "always available" for other users isn't
+  actually guaranteed yet

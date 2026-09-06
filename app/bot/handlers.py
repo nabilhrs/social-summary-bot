@@ -107,7 +107,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         content = normalize_pasted_text(raw_text)
 
-    recent_items = await asyncio.to_thread(get_recent, _RECENT_HISTORY_LIMIT)
+    recent_items = await asyncio.to_thread(get_recent, user.id, _RECENT_HISTORY_LIMIT)
 
     summary = await summarize(content, recent_items)
     if summary is None:
@@ -119,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(THREADS_LIMITATION_NOTE)
 
     try:
-        new_id = await asyncio.to_thread(save_summary, content, summary.text)
+        new_id = await asyncio.to_thread(save_summary, content, summary.text, user.id)
     except Exception:
         logger.exception("Failed to save summary to database")
         return
@@ -158,7 +158,7 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # original Yes/No/View buttons stay intact for a decision afterward —
         # viewing is optional and shouldn't consume the prompt (see PRD V2
         # discussion: "not compulsory, just an added option").
-        old_row = await asyncio.to_thread(get_by_id, existing_id)
+        old_row = await asyncio.to_thread(get_by_id, existing_id, user.id)
         if old_row is None:
             await query.message.reply_text(f"Couldn't find #{existing_id} anymore.")
             return
@@ -169,8 +169,8 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Kept as a separate entry.")
         return
 
-    old_row = await asyncio.to_thread(get_by_id, existing_id)
-    new_row = await asyncio.to_thread(get_by_id, new_id)
+    old_row = await asyncio.to_thread(get_by_id, existing_id, user.id)
+    new_row = await asyncio.to_thread(get_by_id, new_id, user.id)
     if old_row is None or new_row is None:
         await query.edit_message_text("Couldn't find one of those entries anymore — nothing merged.")
         return
@@ -183,7 +183,7 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     try:
-        await asyncio.to_thread(update_merged_summary, old_row["id"], merged.text, new_row["id"])
+        await asyncio.to_thread(update_merged_summary, old_row["id"], merged.text, new_row["id"], user.id)
     except Exception:
         logger.exception("Failed to save merged summary to database")
         await query.edit_message_text(SUMMARY_FAILED_TEXT)
@@ -211,7 +211,7 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("Cancelled — nothing deleted.")
         return
 
-    deleted = await asyncio.to_thread(delete_item, item_id)
+    deleted = await asyncio.to_thread(delete_item, item_id, user.id)
     if not deleted:
         await query.edit_message_text(f"Couldn't find #{item_id} anymore — nothing deleted.")
         return

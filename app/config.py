@@ -17,11 +17,16 @@ class Config:
         self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
-        # PRD 5.8 — single authorized user, hardcoded via env, not a DB table.
-        authorized_id = os.getenv("AUTHORIZED_USER_ID", "")
-        self.authorized_user_id: int | None = (
-            int(authorized_id) if authorized_id.strip() else None
-        )
+        # PRD V2 multi-user revision — an ordered allowlist of Telegram user
+        # ids, comma-separated, not a DB table (still a hardcoded gate, just
+        # no longer limited to one person). Order matters once: on first run
+        # after upgrading from single-user, the first id here is treated as
+        # the owner of any pre-existing rows with no user_id yet (see
+        # app/database/database.py's init_db migration).
+        raw_ids = os.getenv("AUTHORIZED_USER_IDS", "")
+        self.authorized_user_ids: list[int] = [
+            int(uid.strip()) for uid in raw_ids.split(",") if uid.strip()
+        ]
 
         self.db_path: str = os.getenv("DB_PATH", "summarizer.db")
 
@@ -31,8 +36,8 @@ class Config:
         missing = []
         if not self.telegram_bot_token:
             missing.append("TELEGRAM_BOT_TOKEN")
-        if self.authorized_user_id is None:
-            missing.append("AUTHORIZED_USER_ID")
+        if not self.authorized_user_ids:
+            missing.append("AUTHORIZED_USER_IDS")
         if missing:
             raise RuntimeError(
                 f"Missing required environment variable(s): {', '.join(missing)}. "
@@ -40,7 +45,7 @@ class Config:
             )
 
     def is_authorized(self, user_id: int) -> bool:
-        return user_id == self.authorized_user_id
+        return user_id in self.authorized_user_ids
 
 
 config = Config()
