@@ -15,14 +15,15 @@ def looks_like_url(text: str) -> bool:
 # PRD V2 2.1 — platforms with no way to get post content without violating
 # their terms or scraping a private API. Detected up front so we skip a
 # doomed fetch and give an honest, platform-specific fallback instead of a
-# generic one. Threads was here too until PRD V2 2.1's revision found that
-# its Open Graph meta tags (a universal, ToS-clean web standard, unlike the
-# oEmbed API) carry the full caption — see app/extractors/threads.py.
-_UNSUPPORTED_PLATFORM_DOMAINS = {
-    "tiktok.com": "TikTok",
-}
+# generic one. Currently empty: Threads (Open Graph tags — a ToS-clean web
+# standard, unlike the oEmbed API) and TikTok (yt-dlp video download — this
+# one *does* cross TikTok's terms, built at the user's explicit informed
+# request) both got real extraction instead. Kept as an extensibility point
+# for a future platform that turns out to have no viable path at all.
+_UNSUPPORTED_PLATFORM_DOMAINS: dict[str, str] = {}
 
 _THREADS_DOMAINS = ("threads.net", "threads.com")
+_TIKTOK_DOMAINS = ("tiktok.com",)
 
 
 def detect_unsupported_platform(url: str) -> str | None:
@@ -36,6 +37,11 @@ def detect_unsupported_platform(url: str) -> str | None:
 def is_threads_url(url: str) -> bool:
     hostname = (urlparse(url).hostname or "").lower()
     return any(hostname == domain or hostname.endswith(f".{domain}") for domain in _THREADS_DOMAINS)
+
+
+def is_tiktok_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in _TIKTOK_DOMAINS)
 
 
 def normalize_pasted_text(text: str) -> dict:
@@ -63,6 +69,16 @@ def normalize_threads_post(url: str, extracted: dict) -> dict:
         "title": None,
         "author": extracted.get("author"),
         "source": "threads",
+        "url": url,
+        "text": extracted["text"],
+    }
+
+
+def normalize_tiktok_video(url: str, extracted: dict) -> dict:
+    return {
+        "title": None,
+        "author": extracted.get("author"),
+        "source": "tiktok",
         "url": url,
         "text": extracted["text"],
     }

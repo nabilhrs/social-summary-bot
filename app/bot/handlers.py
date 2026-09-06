@@ -16,12 +16,15 @@ from app.extractors.base import (
     looks_like_url,
     detect_unsupported_platform,
     is_threads_url,
+    is_tiktok_url,
     normalize_pasted_text,
     normalize_web_article,
     normalize_threads_post,
+    normalize_tiktok_video,
 )
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
+from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
     save_summary,
@@ -45,6 +48,7 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
+TIKTOK_PROCESSING_TEXT = "🎥 Downloading and analyzing this TikTok video — this may take a moment..."
 THREADS_LIMITATION_NOTE = (
     "ℹ️ Threads posts can be part of a longer thread (including Threads' own "
     "native \"1/9\"-style numbering, which isn't visible to a plain link fetch). "
@@ -80,7 +84,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
             return
 
-        if is_threads_url(raw_text):
+        if is_tiktok_url(raw_text):
+            await message.reply_text(TIKTOK_PROCESSING_TEXT)
+            extracted = await fetch_tiktok_video(raw_text)
+            if extracted is None:
+                await message.reply_text(EXTRACTION_FAILED_TEXT)
+                return
+            content = normalize_tiktok_video(raw_text, extracted)
+        elif is_threads_url(raw_text):
             extracted = await fetch_threads_post(raw_text)
             if extracted is None:
                 await message.reply_text(EXTRACTION_FAILED_TEXT)

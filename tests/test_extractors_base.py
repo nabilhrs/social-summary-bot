@@ -2,9 +2,11 @@ from app.extractors.base import (
     looks_like_url,
     detect_unsupported_platform,
     is_threads_url,
+    is_tiktok_url,
     normalize_pasted_text,
     normalize_web_article,
     normalize_threads_post,
+    normalize_tiktok_video,
 )
 
 
@@ -62,14 +64,11 @@ def test_detect_unsupported_platform_no_longer_flags_threads():
     assert detect_unsupported_platform("https://threads.com/@user/post/123") is None
 
 
-def test_detect_unsupported_platform_tiktok():
-    assert detect_unsupported_platform("https://www.tiktok.com/@user/video/123") == "TikTok"
-    assert detect_unsupported_platform("https://vt.tiktok.com/abc123") == "TikTok"
-    assert detect_unsupported_platform("https://vm.tiktok.com/abc123") == "TikTok"
-
-
-def test_detect_unsupported_platform_case_insensitive():
-    assert detect_unsupported_platform("https://WWW.TIKTOK.COM/@user/video/123") == "TikTok"
+def test_detect_unsupported_platform_no_longer_flags_tiktok():
+    # TikTok now gets real extraction via yt-dlp + Gemini video understanding
+    # (app/extractors/tiktok.py), so nothing is left in the unsupported list.
+    assert detect_unsupported_platform("https://www.tiktok.com/@user/video/123") is None
+    assert detect_unsupported_platform("https://vt.tiktok.com/abc123") is None
 
 
 def test_detect_unsupported_platform_none_for_regular_sites():
@@ -77,11 +76,23 @@ def test_detect_unsupported_platform_none_for_regular_sites():
     assert detect_unsupported_platform("https://www.bbc.com/news/some-article") is None
 
 
-def test_detect_unsupported_platform_rejects_lookalike_domains():
+def test_is_tiktok_url_matches_domain_and_subdomains():
+    assert is_tiktok_url("https://www.tiktok.com/@user/video/123")
+    assert is_tiktok_url("https://vt.tiktok.com/abc123")
+    assert is_tiktok_url("https://vm.tiktok.com/abc123")
+    assert is_tiktok_url("https://WWW.TIKTOK.COM/@user/video/123")
+
+
+def test_is_tiktok_url_rejects_lookalike_domains():
     # A domain that merely contains "tiktok.com" as a substring (not a real
     # subdomain) must not match — e.g. a phishing/lookalike domain.
-    assert detect_unsupported_platform("https://tiktok.com.evil.example/x") is None
-    assert detect_unsupported_platform("https://nottiktok.com/x") is None
+    assert not is_tiktok_url("https://tiktok.com.evil.example/x")
+    assert not is_tiktok_url("https://nottiktok.com/x")
+
+
+def test_is_tiktok_url_rejects_other_sites():
+    assert not is_tiktok_url("https://example.com/article")
+    assert not is_tiktok_url("https://threads.com/@user/post/1")
 
 
 def test_is_threads_url_matches_both_domains_and_subdomains():
@@ -97,7 +108,7 @@ def test_is_threads_url_rejects_other_sites():
 
 
 def test_normalize_threads_post():
-    extracted = {"author": "Jane Doe", "text": "post caption", "is_partial_thread": False}
+    extracted = {"author": "Jane Doe", "text": "post caption"}
     content = normalize_threads_post("https://www.threads.net/@jane/post/123", extracted)
     assert content == {
         "title": None,
@@ -105,4 +116,16 @@ def test_normalize_threads_post():
         "source": "threads",
         "url": "https://www.threads.net/@jane/post/123",
         "text": "post caption",
+    }
+
+
+def test_normalize_tiktok_video():
+    extracted = {"author": "creator123", "text": "A video description."}
+    content = normalize_tiktok_video("https://www.tiktok.com/@creator123/video/999", extracted)
+    assert content == {
+        "title": None,
+        "author": "creator123",
+        "source": "tiktok",
+        "url": "https://www.tiktok.com/@creator123/video/999",
+        "text": "A video description.",
     }

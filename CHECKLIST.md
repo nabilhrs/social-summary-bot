@@ -198,3 +198,48 @@ see the "Storage" section above).
 - ✅ Tapping one opens the exact same Yes/No confirmation `/delete <id>` already uses (`build_delete_keyboard()`, extracted into `app/bot/formatting.py` alongside `build_merge_keyboard()`) — one tap to request, one more to confirm, nothing deletes on the first tap
 - ✅ Capped at 20 items (`_MAX_ITEMS_FOR_DELETE_BUTTONS`) — beyond that a wall of buttons would be worse than useful; `/list 50` still works, it just falls back to typing `/delete <id>`
 - ✅ 9 new tests (keyboard construction, row-chunking at 5 per row, empty-list and over-threshold edge cases); verified live end-to-end against a throwaway copy of the real database — `/list` correctly attached one button per shown item, tapping a button produced the right confirmation prompt, and confirming actually deleted the row
+
+### Revision — real TikTok video summarization (supersedes the earlier "skip TikTok for now" decision)
+- **Why revisited:** the user explicitly asked for actual video content
+  summarization rather than a caption-only shortcut, reasoning that typing
+  or pasting anything defeats the point of pasting a link. Restated the
+  ToS tradeoff plainly one more time before proceeding, since — unlike
+  Threads' Open Graph approach — this genuinely does cross TikTok's terms
+  (downloading video content isn't permitted), same category of tool as
+  `youtube-dl`.
+- ✅ Verified live before building: a plain fetch (and yt-dlp *without* its
+  `curl-cffi` "impersonation" extra) gets blocked by TikTok's JS
+  bot-challenge — confirms TikTok resists automated access harder than any
+  other platform this bot touches. Installing `yt-dlp[default,curl-cffi]`
+  gets past it (solves the challenge natively).
+- ✅ Verified live end-to-end on a real public video: downloaded via
+  yt-dlp (2.2MB, 28s video), uploaded to Gemini's Files API, and asked to
+  describe the actual content — the response correctly described visuals
+  (candles, outfit, a specific necklace) and lip-synced lyrics that were
+  **not** in the caption at all, confirming this genuinely summarizes the
+  video, not just whatever text the poster typed
+  ✅ Verified again through the real `handle_message` pipeline end-to-end
+  (processing message → download → Gemini video description → normal
+  summarize() → full TL;DR/KEY POINTS/TAKEAWAY, since the description was
+  long enough to earn the full format) — saved correctly with
+  `source: "tiktok"` and the real author extracted from yt-dlp's metadata
+- ✅ New `app/extractors/tiktok.py`: downloads video via yt-dlp to a temp
+  dir, uploads to Gemini, asks for a description, cleans up both the temp
+  file and the uploaded Gemini copy in a `finally` block regardless of
+  outcome; wrapped in an overall 120s timeout (video processing is much
+  slower than text) and a 200MB download size cap
+  ✅ Sends a "🎥 Downloading and analyzing..." heads-up before starting,
+  since this can take much longer than any other input type and silence
+  during a 30-120s wait would look like the bot hung
+  ✅ Feeds into the *existing* summarize() pipeline unchanged (Combine
+  Mode's `RELATED_ID`, the short-content compact format, everything) by
+  producing plain text like every other extractor — no changes needed to
+  `app/ai/summarizer.py` or `app/ai/prompts.py`
+- ✅ `detect_unsupported_platform()`'s domain dict is now empty (kept as an
+  extensibility point, see `app/extractors/base.py`) — both Threads and
+  TikTok have real extraction now
+- ✅ 3 new tests for the pure caption-combination helper; the
+  download/upload/describe pipeline itself is network- and
+  filesystem-dependent like the other extractors, so it was verified live
+  rather than mocked, consistent with the rest of this project's testing
+  approach

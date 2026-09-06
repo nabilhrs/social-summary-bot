@@ -36,17 +36,13 @@ and extend capture to Threads/TikTok links where realistically possible.
 Phased by value-to-effort, cheapest and highest-value first. Each phase is
 independently shippable — nothing here depends on a later phase.
 
-### Phase 2.1 — Platform-aware fallback for TikTok, real extraction for Threads
+### Phase 2.1 — Real extraction for both Threads and TikTok
 
 **Originally scoped as:** an honest fallback for *both* Threads and TikTok
 — no extraction for either, just a fast, platform-specific "paste the text
-yourself" reply instead of a doomed generic fetch. That shipped first and
-is still exactly right for **TikTok**: no official API for third-party
-content retrieval, and live testing (see below) showed TikTok pushes back
-on automated access harder than Threads does. TikTok video summarization
-was discussed and explicitly deferred — the user's own call when asked
-directly, not a technical dead end (see the addendum below for what it
-would actually take).
+yourself" reply instead of a doomed generic fetch. That shipped first.
+TikTok video summarization was then discussed and explicitly deferred —
+the user's own call when asked directly, not a technical dead end.
 
 **Revised for Threads**, after live testing turned up a distinction the
 original research missed: the "Meta prohibits this" finding was about the
@@ -86,15 +82,37 @@ discloses the "I can only read the linked post, not replies" limitation
 on every Threads extraction, rather than gambling on catching the cases
 that matter.
 
-**Addendum — what real TikTok video summarization would take**, for the
-record: downloading the video (`yt-dlp`) and feeding it directly to
-Gemini's multimodal API (no separate Whisper step needed with current
-models). Technically buildable, but downloading TikTok videos isn't
-something TikTok's terms permit, it's a new dependency with real
-engineering lift (large file handling, longer processing, higher Gemini
-cost for video tokens), and TikTok actively resists automated access more
-than Threads does — matches this PRD's original caution, now with a live
-data point behind it rather than just prior research.
+**Revisited: TikTok video summarization**, after the user reopened the
+decision — pasting or typing a caption defeats the point of just pasting a
+link, and a caption-only shortcut wouldn't actually summarize the *video*
+(what's shown/said) at all, only whatever the poster happened to type.
+Restated the tradeoff plainly one more time before building: unlike
+Threads' Open Graph approach, this genuinely crosses TikTok's terms —
+downloading video content isn't permitted, same category as `youtube-dl`.
+The user weighed that against the caption-only alternative and chose to
+proceed anyway.
+
+Verified live before building: a plain fetch, and even `yt-dlp` without
+its `curl-cffi` "impersonation" extra, gets blocked by TikTok's JS
+bot-challenge outright — direct confirmation that TikTok resists
+automated access harder than any other platform this bot touches.
+Installing `yt-dlp[default,curl-cffi]` gets past it. Verified end-to-end
+on a real public video: downloaded (2.2MB, 28s clip), uploaded to
+Gemini's Files API, and asked to describe the actual content — the
+response correctly described specific visuals (candles, a particular
+necklace) and lip-synced lyrics that weren't in the caption at all,
+confirming this is a real video summary, not a caption pass-through.
+
+**What got built:** `app/extractors/tiktok.py` — downloads via yt-dlp,
+uploads to Gemini, asks for a description, cleans up the temp file and
+the uploaded Gemini copy in a `finally` block regardless of outcome.
+Wrapped in a 120s overall timeout (video processing is much slower than
+text) and a 200MB size cap. The resulting description feeds into the
+*existing* summarize() pipeline unchanged — Combine Mode, the compact
+short-content format, everything — since it's just plain text like every
+other extractor produces, no changes needed to `app/ai/summarizer.py` or
+`app/ai/prompts.py`. A "🎥 Downloading and analyzing..." message goes out
+first, since silence during a 30-120s wait would look like the bot hung.
 
 ### Phase 2.2 — Retrieval: `/list` and `/search`
 
@@ -141,11 +159,10 @@ a 3-sentence tip. Proposal:
 ## 4. Explicitly Out of Scope (V2)
 
 Carried over from V1 (still true), plus:
-- Automated TikTok video download/transcription — explicitly deferred by
-  the user's own choice, not a technical dead end (see Phase 2.1 addendum)
 - Full multi-part Threads thread stitching — not achievable without a
-  headless browser or reverse-engineering a private API; the bot flags a
-  detected partial thread instead of attempting to reconstruct it
+  headless browser or reverse-engineering a private API; the bot
+  unconditionally discloses this limitation instead of guessing when it
+  applies (see Phase 2.1 — detection was tried and abandoned as unreliable)
 - Real embeddings/vector search — Combine Mode's recent-history approach
   is still working well at current volume
 - Tags, categories, web dashboard, multi-user support

@@ -118,6 +118,43 @@ no reliance on a specific process instance handling the click.
 
 ---
 
+## 6. Threads multi-part detection missed the actual real-world case
+
+**Symptom:** A user showed a real Threads post with a native "1/9" pill
+badge next to the caption — the bot's multi-part-thread heads-up never
+fired for it.
+
+**Cause:** The detector (`looks_like_partial_thread` in
+`app/extractors/threads.py`) only regex-matched numbering typed into the
+caption text itself (`(1/4)`, `part 2 of 5`). Threads' own native
+multi-part badge is UI chrome computed client-side from the reply
+relationship graph — it was never part of the caption, so no regex on the
+caption could ever see it. The detector "worked" only for the rare case of
+someone manually typing a fraction into their own post text.
+
+**Investigated before fixing:** checked whether any per-post threading
+signal (reply count, thread position, etc.) survives an unauthenticated
+fetch anywhere in the raw HTML. It doesn't — a promising `reply_count`
+string match turned out to be generic app config (a feature-gating flag),
+not real per-post data, once the surrounding JSON was inspected.
+
+**Fix:** Removed detection entirely rather than patch the regex further —
+there's no reliable signal to detect on on. The bot now unconditionally
+appends the "I can only read the linked post, not replies" disclosure to
+every Threads extraction, regardless of whether numbering is visible.
+
+**Lesson:** A detector that only catches the rare manually-typed case
+while silently missing the platform's own native version of the same
+feature is worse than no detector — it creates false confidence that the
+problem is handled. When the reliable signal doesn't exist, disclose the
+limitation unconditionally instead of guessing when it applies. Also:
+before trusting a "found it" grep hit in a large raw HTML blob, check the
+surrounding context — a substring match on a field name doesn't mean it's
+real per-record data rather than generic config that happens to share a
+name.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The
