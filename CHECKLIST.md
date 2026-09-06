@@ -285,10 +285,49 @@ see the "Storage" section above).
   attempts against User A's real, existing item were all correctly
   refused with "not found" rather than silently succeeding or leaking
   data — the critical security property this whole change exists for
-- ⚠️ **Known, accepted gaps** (explicitly signed off on by the user
-  rather than silently decided): no per-user usage caps or rate limiting
-  on Gemini API calls — one heavy user (especially via the TikTok video
-  path, the most expensive call) can consume the owner's entire quota/
-  budget; no dedicated hosting — the bot still only runs while the
-  owner's own machine does, so "always available" for other users isn't
-  actually guaranteed yet
+- ⚠️ **Known, accepted gaps at the time** (explicitly signed off on by
+  the user rather than silently decided): no per-user usage caps on
+  Gemini API calls; no dedicated hosting. Both addressed next, below.
+
+### Follow-up — per-user Gemini API keys, replacing the "no usage caps" gap
+- **Why:** the accepted gap above meant one invited user (especially via
+  the TikTok video path — the most expensive call) could consume the
+  owner's entire Gemini quota/budget with nothing stopping them. Rather
+  than build rate limiting, the user chose the cleaner fix: make everyone
+  pay for their own usage.
+- ✅ New `user_settings` table (`user_id` → `gemini_api_key`), explicitly
+  documented as plaintext with no encryption at rest — same trust model
+  as the rest of this SQLite-based project, worth knowing if the
+  allowlist ever grows past a small trusted group
+- ✅ `resolve_gemini_api_key(user_id)`: a personal key (set via `/setkey`)
+  always wins; otherwise only the *first* id in `AUTHORIZED_USER_IDS`
+  (the original owner) falls back to the shared `.env` key — every other
+  invited user gets `None` and must set their own. This is the one
+  function every Gemini-calling code path goes through, so there's a
+  single place the policy lives
+- ✅ `app/ai/summarizer.py` and `app/extractors/tiktok.py` no longer build
+  one fixed module-level `genai.Client` at import time — every call now
+  takes the caller's resolved key and constructs a client per-request
+- ✅ New `/setkey <api_key>` command: makes one small live Gemini call to
+  validate the key *before* saving it (so a typo fails immediately with a
+  clear message, not on the user's next real summary attempt), then
+  best-effort deletes the message containing the raw key from chat
+  history
+- ✅ The "no key" check happens in `handle_message` *before* any
+  extraction work starts (right after the empty-input check) — so a user
+  without a key never triggers a TikTok download or web fetch only to
+  fail at the summarize step; `handle_merge_callback` checks it right
+  before the actual merge call, but *after* the free "view"/"decline"
+  branches, which need no Gemini call at all
+- ✅ 9 new tests for the API-key DB functions (get/set/overwrite/per-user
+  scoping, and all three `resolve_gemini_api_key` branches); verified
+  live end-to-end: a non-owner sending anything was correctly blocked
+  with a `/setkey` prompt *before* any Gemini call fired, `/setkey` with
+  a garbage key was correctly rejected without being stored, and
+  `/setkey` with a (mocked-valid) key correctly deleted the message,
+  stored the key, and made `resolve_gemini_api_key` return it immediately
+
+### Follow-up — hosting, replacing the "runs only on the owner's machine" gap
+See `DEPLOY.md` for the full setup. Summary: a free-tier always-on cloud
+VM running the bot as a `systemd` service (auto-restart on crash, starts
+on boot), so it no longer depends on the owner's own laptop being open.

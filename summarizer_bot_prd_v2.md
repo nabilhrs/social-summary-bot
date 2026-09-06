@@ -181,10 +181,45 @@ attempt by one user to `/view`, `/delete`, or `/merge` the *other* user's
 real, existing item was correctly refused — the property this whole
 change exists to guarantee.
 
-**Consciously not built:** per-user rate limiting/usage caps, and hosting
-beyond "runs on whoever starts `main.py`" — both explicitly accepted as
-known gaps rather than silently ignored, since the user said not to worry
-about cost right now.
+**Consciously not built at the time:** per-user rate limiting/usage caps,
+and hosting beyond "runs on whoever starts `main.py`" — both explicitly
+accepted as known gaps rather than silently ignored, since the user said
+not to worry about cost right now. Both were addressed in the very next
+round, below.
+
+### Follow-up — per-user Gemini API keys instead of usage caps
+
+Asked directly: build rate limiting, or make every invited user supply
+their own Gemini key? Per-user keys won — cleaner than a cap, and it means
+the owner's key can never be someone else's problem to manage. Design: a
+personal key (set via `/setkey`) always wins; otherwise only the *first*
+id in `AUTHORIZED_USER_IDS` (the owner) falls back to the shared `.env`
+key, so the owner's own usage needs zero setup change while every other
+invited user is required to bring their own. `/setkey` validates the key
+with one live Gemini call before saving it, so a typo surfaces immediately
+rather than on the user's next real summary — and best-effort deletes the
+message containing the raw key afterward. Keys live in plain SQLite, same
+trust model as everything else here; stated plainly rather than assumed.
+
+Both `app/ai/summarizer.py` and `app/extractors/tiktok.py` previously
+built one fixed `genai.Client` at import time — refactored to construct a
+client per call from whichever key was resolved for that request. Verified
+live: a non-owner sending anything was blocked with a `/setkey` prompt
+*before* any Gemini call fired (no wasted quota on the block itself), a
+garbage key was rejected without being stored, and a valid key was stored
+and immediately usable.
+
+### Follow-up — hosting
+
+Asked directly to make the bot stay online continuously. The long-polling
+architecture (no webhook) means this needs no public URL or inbound ports
+— just a persistent process. Landed on a free-tier always-on cloud VM
+(Oracle Cloud's Always Free tier, chosen for being genuinely perpetual
+rather than a 12-month trial like AWS/GCP) running the bot as a `systemd`
+service — auto-restarts on crash, starts on boot. Account creation and VM
+provisioning are necessarily manual (creating cloud accounts isn't
+something to automate on someone's behalf); everything from SSH onward is
+scripted in `deploy/setup.sh`, with the full walkthrough in `DEPLOY.md`.
 
 ## 4. Explicitly Out of Scope (V2)
 

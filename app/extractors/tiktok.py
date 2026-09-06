@@ -16,6 +16,10 @@ TikTok's bot-challenge at all: verified live before writing this that a
 plain fetch, and even yt-dlp without impersonation, gets blocked with a JS
 challenge page (TikTok pushes back on automated access harder than any
 other platform this bot talks to).
+
+PRD V2 per-user key revision: takes the caller's own resolved Gemini API
+key rather than a fixed client — video calls are the most expensive kind,
+which is exactly why per-user keys exist.
 """
 import asyncio
 import logging
@@ -25,8 +29,6 @@ import time
 
 import yt_dlp
 from google import genai
-
-from app.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +43,6 @@ _DESCRIBE_PROMPT = (
     "watched it to understand what it's about."
 )
 
-_client = genai.Client(api_key=config.gemini_api_key)
-
 
 def _build_text(description: str, caption: str | None) -> str:
     if caption:
@@ -50,7 +50,7 @@ def _build_text(description: str, caption: str | None) -> str:
     return description
 
 
-def _download_and_describe(url: str) -> dict | None:
+def _download_and_describe(url: str, api_key: str) -> dict | None:
     """Runs in a worker thread — yt-dlp and the genai SDK's file upload are
     both synchronous. Downloads the video to a temp dir, uploads it to
     Gemini, asks for a description, then cleans up both the temp file and
@@ -78,18 +78,19 @@ def _download_and_describe(url: str) -> dict | None:
 
         uploaded = None
         try:
-            uploaded = _client.files.upload(file=file_path)
+            client = genai.Client(api_key=api_key)
+            uploaded = client.files.upload(file=file_path)
             waited = 0
             while uploaded.state.name == "PROCESSING" and waited < _MAX_UPLOAD_POLL_SECONDS:
                 time.sleep(1)
                 waited += 1
-                uploaded = _client.files.get(name=uploaded.name)
+                uploaded = client.files.get(name=uploaded.name)
 
             if uploaded.state.name != "ACTIVE":
                 logger.warning("Uploaded video never became active (state=%s) for %s", uploaded.state, url)
                 return None
 
-            response = _client.models.generate_content(
+            response = client.models.generate_content(
                 model=_MODEL,
                 contents=[uploaded, _DESCRIBE_PROMPT],
             )
@@ -103,7 +104,7 @@ def _download_and_describe(url: str) -> dict | None:
         finally:
             if uploaded is not None:
                 try:
-                    _client.files.delete(name=uploaded.name)
+                    client.files.delete(name=uploaded.name)
                 except Exception:
                     logger.warning("Failed to clean up uploaded Gemini file for %s", url)
 
@@ -112,10 +113,10 @@ def _download_and_describe(url: str) -> dict | None:
     return {"author": author, "text": _build_text(description, caption)}
 
 
-async def fetch_and_extract(url: str) -> dict | None:
+async def fetch_and_extract(url: str, api_key: str) -> dict | None:
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_download_and_describe, url),
+            asyncio.to_thread(_download_and_describe, url, api_key),
             timeout=_OVERALL_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:

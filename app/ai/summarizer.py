@@ -3,6 +3,11 @@ AI summarization (PRD 5.4) and Combine Mode's related-item flagging + merge (5.5
 
 On any API failure, returns None so the caller can show the fixed error message
 from PRD 5.9 rather than leaking exception details to the user.
+
+PRD V2 per-user key revision: every call takes the caller's own resolved
+Gemini API key (see app/database/database.py's resolve_gemini_api_key)
+rather than using one fixed client — each authorized user's usage runs on
+their own key, not a shared one.
 """
 import asyncio
 import logging
@@ -11,7 +16,6 @@ from dataclasses import dataclass
 
 from google import genai
 
-from app.config import config
 from app.ai.prompts import build_summary_prompt, build_merge_prompt
 
 logger = logging.getLogger(__name__)
@@ -19,8 +23,6 @@ logger = logging.getLogger(__name__)
 _MODEL = "gemini-3.6-flash"
 _TIMEOUT_SECONDS = 30
 _RELATED_ID_RE = re.compile(r"RELATED_ID\s*:\s*\**\s*#?\s*(NONE|\d+)", re.IGNORECASE)
-
-_client = genai.Client(api_key=config.gemini_api_key)
 
 
 @dataclass
@@ -43,11 +45,12 @@ def _extract_related_id(text: str) -> tuple[str, int | None]:
     return cleaned, related_id
 
 
-async def _generate(prompt: str) -> str | None:
+async def _generate(prompt: str, api_key: str) -> str | None:
     try:
+        client = genai.Client(api_key=api_key)
         response = await asyncio.wait_for(
             asyncio.to_thread(
-                _client.models.generate_content,
+                client.models.generate_content,
                 model=_MODEL,
                 contents=prompt,
             ),
@@ -67,9 +70,11 @@ async def _generate(prompt: str) -> str | None:
     return text
 
 
-async def summarize(content: dict, recent_items: list[dict] | None = None) -> Summary | None:
+async def summarize(
+    content: dict, recent_items: list[dict] | None, api_key: str
+) -> Summary | None:
     prompt = build_summary_prompt(content, recent_items)
-    text = await _generate(prompt)
+    text = await _generate(prompt, api_key)
     if text is None:
         return None
 
@@ -82,10 +87,10 @@ async def summarize(content: dict, recent_items: list[dict] | None = None) -> Su
 
 
 async def merge_summaries(
-    old_text: str, new_text: str, old_title: str | None, new_title: str | None
+    old_text: str, new_text: str, old_title: str | None, new_title: str | None, api_key: str
 ) -> Summary | None:
     prompt = build_merge_prompt(old_text, new_text, old_title, new_title)
-    text = await _generate(prompt)
+    text = await _generate(prompt, api_key)
     if text is None:
         return None
     return Summary(text=text)

@@ -1,0 +1,17 @@
+[Unit]
+Description=Social Summary Bot (Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/social-summary-bot
+ExecStart=/home/ubuntu/social-summary-bot/venv/bin/python main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

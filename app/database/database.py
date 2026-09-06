@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 """
 
+# Per-user Gemini API keys (PRD V2 multi-user cost revision). Stored in
+# plain SQLite, same as everything else in this project — no encryption at
+# rest. Reasonable for a small allowlist of people the owner knows, worth
+# knowing if the allowlist ever grows past that.
+_USER_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER PRIMARY KEY,
+    gemini_api_key TEXT
+);
+"""
+
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -39,6 +50,7 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 def init_db() -> None:
     with sqlite3.connect(config.db_path) as conn:
         conn.execute(_SCHEMA)
+        conn.execute(_USER_SETTINGS_SCHEMA)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
         if not _column_exists(conn, "summaries", "previous_summary"):
@@ -172,3 +184,33 @@ def undo_merge(row_id: int, previous_summary: str, user_id: int) -> None:
             "UPDATE summaries SET summary = ?, merged_from = NULL WHERE id = ? AND user_id = ?",
             (previous_summary, row_id, user_id),
         )
+
+
+def get_user_api_key(user_id: int) -> str | None:
+    with sqlite3.connect(config.db_path) as conn:
+        row = conn.execute(
+            "SELECT gemini_api_key FROM user_settings WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def set_user_api_key(user_id: int, api_key: str) -> None:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "INSERT INTO user_settings (user_id, gemini_api_key) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET gemini_api_key = excluded.gemini_api_key",
+            (user_id, api_key),
+        )
+
+
+def resolve_gemini_api_key(user_id: int) -> str | None:
+    """A personal key (set via /setkey) always wins. Otherwise, only the
+    first id in AUTHORIZED_USER_IDS (the original owner) falls back to the
+    shared .env key — every other invited user must set their own, which is
+    the entire point: nobody but the owner can ever consume the owner's key."""
+    personal_key = get_user_api_key(user_id)
+    if personal_key:
+        return personal_key
+    if config.authorized_user_ids and user_id == config.authorized_user_ids[0]:
+        return config.gemini_api_key or None
+    return None

@@ -32,6 +32,7 @@ from app.database.database import (
     get_by_id,
     update_merged_summary,
     delete_item,
+    resolve_gemini_api_key,
 )
 from app.bot.formatting import format_full_item, build_merge_keyboard
 
@@ -48,6 +49,10 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
+NO_API_KEY_TEXT = (
+    "You need your own Gemini API key before I can generate summaries for you. "
+    "Get a free one at https://aistudio.google.com/apikey, then send /setkey <your-key>."
+)
 TIKTOK_PROCESSING_TEXT = "🎥 Downloading and analyzing this TikTok video — this may take a moment..."
 THREADS_LIMITATION_NOTE = (
     "ℹ️ Threads posts can be part of a longer thread (including Threads' own "
@@ -76,6 +81,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(INVALID_INPUT_TEXT)
         return
 
+    # Resolved before any extraction work — no point downloading a TikTok
+    # video (the slowest, most expensive path) only to fail at the
+    # summarize step for lack of a key.
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
+    if api_key is None:
+        await message.reply_text(NO_API_KEY_TEXT)
+        return
+
     is_threads_content = False
 
     if looks_like_url(raw_text):
@@ -86,7 +99,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if is_tiktok_url(raw_text):
             await message.reply_text(TIKTOK_PROCESSING_TEXT)
-            extracted = await fetch_tiktok_video(raw_text)
+            extracted = await fetch_tiktok_video(raw_text, api_key)
             if extracted is None:
                 await message.reply_text(EXTRACTION_FAILED_TEXT)
                 return
@@ -109,7 +122,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     recent_items = await asyncio.to_thread(get_recent, user.id, _RECENT_HISTORY_LIMIT)
 
-    summary = await summarize(content, recent_items)
+    summary = await summarize(content, recent_items, api_key)
     if summary is None:
         await message.reply_text(SUMMARY_FAILED_TEXT)
         return
@@ -169,6 +182,11 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Kept as a separate entry.")
         return
 
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
+    if api_key is None:
+        await query.edit_message_text(NO_API_KEY_TEXT)
+        return
+
     old_row = await asyncio.to_thread(get_by_id, existing_id, user.id)
     new_row = await asyncio.to_thread(get_by_id, new_id, user.id)
     if old_row is None or new_row is None:
@@ -176,7 +194,7 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     merged = await merge_summaries(
-        old_row["original_text"], new_row["original_text"], old_row["title"], new_row["title"]
+        old_row["original_text"], new_row["original_text"], old_row["title"], new_row["title"], api_key
     )
     if merged is None:
         await query.edit_message_text(SUMMARY_FAILED_TEXT)

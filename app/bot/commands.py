@@ -4,11 +4,20 @@ Slash-command handlers (PRD 5.6, PRD V2 2.2).
 /summarize is intentionally not implemented — auto-detection in
 app/bot/handlers.py covers both URL and pasted text without a command.
 """
+import asyncio
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+from google import genai
 
 from app.config import config
-from app.database.database import list_items, search_items, get_by_id, undo_merge
+from app.database.database import (
+    list_items,
+    search_items,
+    get_by_id,
+    undo_merge,
+    set_user_api_key,
+)
 from app.bot.formatting import format_full_item, build_merge_keyboard, build_delete_keyboard, build_list_delete_keyboard
 
 WELCOME_TEXT = (
@@ -40,7 +49,10 @@ HELP_TEXT = (
     "/merge <keep_id> <absorb_id> — merge two saved items into one (asks for confirmation)\n"
     "/delete <id> — delete a saved item (asks for confirmation)\n"
     "/undo <id> — revert a merged item back to its pre-merge summary\n"
+    "/setkey <api_key> — set your own Gemini API key (required unless you're the bot's owner)\n"
 )
+
+_VALIDATION_MODEL = "gemini-3.6-flash"
 
 _DEFAULT_LIST_LIMIT = 10
 _MAX_LIST_LIMIT = 50
@@ -327,3 +339,51 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     undo_merge(item_id, item["previous_summary"], user_id)
     await update.message.reply_text(f"Reverted #{item_id} to its pre-merge summary.")
+
+
+def _validate_gemini_key(api_key: str) -> bool:
+    """A tiny live call against the key itself — so a typo or expired key
+    fails immediately with a clear message, not on the user's next summary."""
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(model=_VALIDATION_MODEL, contents="Say OK.")
+        return bool((response.text or "").strip())
+    except Exception:
+        return False
+
+
+async def setkey_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /setkey <your-gemini-api-key>\n"
+            "Get a free one at https://aistudio.google.com/apikey"
+        )
+        return
+
+    api_key = context.args[0].strip()
+
+    # Best-effort: remove the message containing the raw key from chat
+    # history so it doesn't linger visibly. Send replies via effective_chat
+    # from here on rather than message.reply_text, since the original
+    # message this would reply to may no longer exist.
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    is_valid = await asyncio.to_thread(_validate_gemini_key, api_key)
+    if not is_valid:
+        await update.effective_chat.send_message(
+            "That doesn't look like a working Gemini API key — double-check it and try again."
+        )
+        return
+
+    set_user_api_key(user_id, api_key)
+    await update.effective_chat.send_message(
+        "✅ Your Gemini API key is set. Your summaries now run on your own key."
+    )

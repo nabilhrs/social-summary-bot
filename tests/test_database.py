@@ -376,3 +376,58 @@ def test_undo_merge_does_not_touch_another_users_row(db_path):
 
     row = database.get_by_id(other_id, OTHER_USER)
     assert row["summary"] == "TL;DR: theirs"
+
+
+def test_get_user_api_key_missing_returns_none(db_path):
+    assert database.get_user_api_key(USER) is None
+
+
+def test_set_and_get_user_api_key(db_path):
+    database.set_user_api_key(USER, "my-secret-key")
+
+    assert database.get_user_api_key(USER) == "my-secret-key"
+
+
+def test_set_user_api_key_overwrites_existing(db_path):
+    database.set_user_api_key(USER, "old-key")
+    database.set_user_api_key(USER, "new-key")
+
+    assert database.get_user_api_key(USER) == "new-key"
+
+
+def test_set_user_api_key_is_scoped_per_user(db_path):
+    database.set_user_api_key(USER, "users-key")
+    database.set_user_api_key(OTHER_USER, "other-users-key")
+
+    assert database.get_user_api_key(USER) == "users-key"
+    assert database.get_user_api_key(OTHER_USER) == "other-users-key"
+
+
+def test_resolve_gemini_api_key_prefers_personal_key(db_path, monkeypatch):
+    monkeypatch.setattr(database.config, "authorized_user_ids", [USER])
+    monkeypatch.setattr(database.config, "gemini_api_key", "owner-env-key")
+    database.set_user_api_key(USER, "users-own-key")
+
+    assert database.resolve_gemini_api_key(USER) == "users-own-key"
+
+
+def test_resolve_gemini_api_key_owner_falls_back_to_env_key(db_path, monkeypatch):
+    monkeypatch.setattr(database.config, "authorized_user_ids", [USER, OTHER_USER])
+    monkeypatch.setattr(database.config, "gemini_api_key", "owner-env-key")
+
+    assert database.resolve_gemini_api_key(USER) == "owner-env-key"
+
+
+def test_resolve_gemini_api_key_non_owner_without_key_returns_none(db_path, monkeypatch):
+    monkeypatch.setattr(database.config, "authorized_user_ids", [USER, OTHER_USER])
+    monkeypatch.setattr(database.config, "gemini_api_key", "owner-env-key")
+
+    assert database.resolve_gemini_api_key(OTHER_USER) is None
+
+
+def test_resolve_gemini_api_key_non_owner_with_personal_key(db_path, monkeypatch):
+    monkeypatch.setattr(database.config, "authorized_user_ids", [USER, OTHER_USER])
+    monkeypatch.setattr(database.config, "gemini_api_key", "owner-env-key")
+    database.set_user_api_key(OTHER_USER, "other-users-own-key")
+
+    assert database.resolve_gemini_api_key(OTHER_USER) == "other-users-own-key"

@@ -41,8 +41,9 @@ Combine Mode code.
      Every listed user gets their own private saved items; no one sees
      anyone else's.
    - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey).
-     All usage across every authorized user runs on this one key — there's no
-     per-user quota, so anyone you add can consume your Gemini usage/cost.
+     Only used for the *first* id in `AUTHORIZED_USER_IDS` (the owner) — every
+     other invited user must set their own key from inside the bot with
+     `/setkey`, so no one but the owner can ever consume this key's cost.
 4. Run the bot:
    ```
    venv\Scripts\python main.py
@@ -83,6 +84,21 @@ never another authorized user's. Commands for managing what's saved:
 | `/merge <keep_id> <absorb_id>` | Merge two items into one (asks for confirmation) |
 | `/delete <id>` | Delete an item (asks for confirmation) |
 | `/undo <id>` | Revert a merged item to its pre-merge summary |
+| `/setkey <api_key>` | Set your own Gemini API key (required for every invited user except the owner) |
+
+Every authorized user besides the owner sees a prompt to run `/setkey` the
+first time they try to summarize anything — `/setkey` validates the key
+live before saving it, and deletes the message containing it from chat
+history afterward. Keys are stored in plain SQLite, same as everything
+else here — no encryption at rest, worth knowing if you invite people
+beyond a small trusted group.
+
+## Hosting
+
+Running `python main.py` locally only keeps the bot online while your
+machine does. See [DEPLOY.md](DEPLOY.md) to run it continuously on a
+free-tier cloud VM (`deploy/setup.sh` + `deploy/social-summary-bot.service`
+automate everything past account creation).
 
 ## Tests
 
@@ -116,6 +132,9 @@ social-summary-bot/
 │   │   └── database.py
 │   └── config.py
 ├── tests/
+├── deploy/
+│   ├── setup.sh                     # provisions a fresh Ubuntu VM
+│   └── social-summary-bot.service   # systemd unit for always-on running
 ├── .env / .env.example
 ├── requirements.txt
 └── main.py

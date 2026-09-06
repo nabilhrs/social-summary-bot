@@ -2,7 +2,7 @@
 Entry point. Wires up the Telegram Application and starts polling.
 
 Run with: python main.py
-Requires TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_ID in .env (see .env.example).
+Requires TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_IDS in .env (see .env.example).
 """
 import logging
 
@@ -26,6 +26,7 @@ from app.bot.commands import (
     merge_command,
     delete_command,
     undo_command,
+    setkey_command,
     handle_quick_action_callback,
     handle_delete_request_callback,
 )
@@ -44,6 +45,7 @@ _BOT_COMMANDS = [
     BotCommand("merge", "Merge two saved items into one"),
     BotCommand("delete", "Delete a saved item"),
     BotCommand("undo", "Revert a merged item to its pre-merge summary"),
+    BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
 logging.basicConfig(
@@ -74,6 +76,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("merge", merge_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("undo", undo_command))
+    app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no|view):\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
