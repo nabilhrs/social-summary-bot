@@ -81,12 +81,21 @@ def _format_full_item(item: dict) -> str:
     return "\n".join(lines)
 
 
+def _quick_action_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📋 Show recent items", callback_data="quick:list")],
+            [InlineKeyboardButton("❓ Help", callback_data="quick:help")],
+        ]
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id if update.effective_user else None
     if user_id is None or not config.is_authorized(user_id):
         await update.message.reply_text("Sorry, this bot is private.")
         return
-    await update.message.reply_text(WELCOME_TEXT)
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=_quick_action_keyboard())
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -94,7 +103,33 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if user_id is None or not config.is_authorized(user_id):
         await update.message.reply_text("Sorry, this bot is private.")
         return
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown", reply_markup=_quick_action_keyboard())
+
+
+async def handle_quick_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Buttons for commands that need no extra input (see PRD V2 2.4 discussion
+    on making commands clickable) — /search, /view, /delete, /undo all need an
+    id/keyword a button can't supply, so only /list and /help get one here."""
+    query = update.callback_query
+    user_id = update.effective_user.id if update.effective_user else None
+
+    if query is None or query.data is None:
+        return
+    await query.answer()
+
+    if user_id is None or not config.is_authorized(user_id):
+        await query.message.reply_text("Sorry, this bot is private.")
+        return
+
+    _, action = query.data.split(":", 1)
+    if action == "list":
+        items = list_items(_DEFAULT_LIST_LIMIT)
+        if not items:
+            await query.message.reply_text("You haven't saved anything yet.")
+            return
+        await query.message.reply_text(_format_item_list(items, f"Last {len(items)} saved item(s):"))
+    elif action == "help":
+        await query.message.reply_text(HELP_TEXT, parse_mode="Markdown", reply_markup=_quick_action_keyboard())
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

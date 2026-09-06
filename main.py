@@ -6,6 +6,7 @@ Requires TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_ID in .env (see .env.example).
 """
 import logging
 
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -24,9 +25,23 @@ from app.bot.commands import (
     view_command,
     delete_command,
     undo_command,
+    handle_quick_action_callback,
 )
 from app.bot.handlers import handle_message, handle_merge_callback, handle_delete_callback
 from app.database.database import init_db
+
+# Registered with Telegram via set_my_commands so clients show a tappable "/"
+# command menu (tapping one inserts and sends it) instead of requiring the
+# user to remember and type commands from scratch.
+_BOT_COMMANDS = [
+    BotCommand("start", "Show the welcome message"),
+    BotCommand("help", "Show what I can do"),
+    BotCommand("list", "Show your last saved items"),
+    BotCommand("search", "Search your saved items"),
+    BotCommand("view", "Show the full summary for a saved item"),
+    BotCommand("delete", "Delete a saved item"),
+    BotCommand("undo", "Revert a merged item to its pre-merge summary"),
+]
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -41,8 +56,12 @@ async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Unhandled exception while processing update: %s", update, exc_info=context.error)
 
 
+async def _post_init(app: Application) -> None:
+    await app.bot.set_my_commands(_BOT_COMMANDS)
+
+
 def build_app() -> Application:
-    app = Application.builder().token(config.telegram_bot_token).build()
+    app = Application.builder().token(config.telegram_bot_token).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -54,6 +73,7 @@ def build_app() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no):\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
     app.add_error_handler(log_error)
 
     return app

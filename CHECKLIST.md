@@ -122,4 +122,13 @@ see the "Storage" section above).
 - ✅ 12 new tests (migration idempotency + correctness, delete, undo); verified live end-to-end (migration against a throwaway copy of the real database, full delete confirm/cancel/double-delete flow, and undo against a freshly created merge) — real `summarizer.db` was never touched during testing
 
 ### Phase 2.4 — Note-style output for short content
-- ❌ Not started
+- ✅ Content under 80 words gets a compact `SUMMARY: <1-3 sentences>` format instead of the full `TL;DR/KEY POINTS/TAKEAWAY` structure; 80+ words keeps the full structure unchanged
+- ✅ Merges apply the same rule — if both sources being merged are short, the merged result stays compact too
+- ✅ `RELATED_ID` parsing needed no changes — it already worked on any line containing the tag regardless of surrounding format
+- ✅ 10 new/updated tests (short vs. long branching for both summarize and merge prompts); verified live against realistic short-note and long-article content — outputs matched exactly as designed
+
+### Bonus — clickable commands (in response to a usability question, not a planned phase)
+- ✅ `set_my_commands()` registered via `post_init` — Telegram clients now show a tappable "/" command menu with descriptions for all 7 commands instead of requiring them to be typed from memory
+- ✅ `/start` and `/help` now include inline "📋 Show recent items" / "❓ Help" buttons that run `/list` and `/help` directly on tap — the only two commands with no required argument, so the only two a button can fully replace
+- ✅ Commands needing an argument (`/search`, `/view`, `/delete`, `/undo`) can't be reduced to a bare button tap (Telegram has no way to prefill a value into the input box from a callback) — the command menu still helps by autocompleting the command name itself
+- ✅ Verified live: `post_init` hook present on the built `Application`, all handler patterns registered correctly, `/start` includes the buttons, and both quick actions produce correct output against the real database
