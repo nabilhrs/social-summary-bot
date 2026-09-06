@@ -22,12 +22,19 @@ here incur no charge as long as you stay within the free-tier shapes below.
 From the OCI console: **Compute → Instances → Create Instance**.
 
 - **Image:** Ubuntu (22.04 or 24.04 LTS)
-- **Shape:** one of the Always Free-eligible shapes — either the ARM-based
-  `VM.Standard.A1.Flex` (more generous allowance: up to 4 OCPU / 24GB RAM
-  free) or the AMD `VM.Standard.E2.1.Micro` (smaller, but simpler and more
-  reliably available — the ARM shape's free capacity is sometimes hard to
-  provision in busy regions; if you hit a capacity error, either retry, try
-  another region, or fall back to the AMD shape)
+- **Shape:** two options are Always Free-eligible:
+  - `VM.Standard.E2.1.Micro` (AMD, x86) — smaller (1/8 OCPU, 1GB RAM), but
+    reliably available and plenty for this bot, which is mostly waiting on
+    network I/O, not doing heavy compute. **Start with this one.**
+  - `VM.Standard.A1.Flex` (ARM) — a much larger free allowance (up to 4
+    OCPU / 24GB RAM total across instances), but its free capacity is
+    extremely popular and frequently exhausted — expect
+    `Out of capacity for shape VM.Standard.A1.Flex in availability domain
+    ...` on many attempts. If you want it anyway: try a different
+    Availability Domain if your region's dropdown offers more than one
+    (many regions only have one, in which case this won't help), or just
+    retry later — capacity fluctuates as other free-tier users release
+    instances.
 - **Networking:** every Compute instance must attach to a subnet inside a
   Virtual Cloud Network (VCN) — on a brand-new account you likely don't
   have one yet, so:
