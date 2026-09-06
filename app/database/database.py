@@ -64,6 +64,35 @@ def get_by_id(row_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def list_items(limit: int = 10) -> list[dict]:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, title, original_text, created_at FROM summaries ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def search_items(keyword: str, limit: int = 10) -> tuple[list[dict], int]:
+    """Case-insensitive substring search across title, summary, and
+    original_text. Returns (matches limited to `limit`, total match count)."""
+    pattern = f"%{keyword}%"
+    condition = "title LIKE ? OR summary LIKE ? OR original_text LIKE ?"
+    params = (pattern, pattern, pattern)
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM summaries WHERE {condition}", params
+        ).fetchone()["c"]
+        rows = conn.execute(
+            f"SELECT id, title, original_text, created_at FROM summaries "
+            f"WHERE {condition} ORDER BY id DESC LIMIT ?",
+            params + (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows], total
+
+
 def update_merged_summary(existing_id: int, summary_text: str, merged_id: int) -> None:
     """Absorb `merged_id` into `existing_id` (PRD 5.5 step 4): replace the
     existing row's summary, bump created_at, and record the merged-in id."""

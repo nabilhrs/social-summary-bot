@@ -119,3 +119,75 @@ def test_update_merged_summary_appends_to_existing_merged_from(db_path):
 
     row = database.get_by_id(old_id)
     assert row["merged_from"] == f"{second_id},{third_id}"
+
+
+def test_list_items_returns_newest_first(db_path):
+    first_id = database.save_summary(_make_content("First", "a"), "TL;DR: first")
+    second_id = database.save_summary(_make_content("Second", "b"), "TL;DR: second")
+
+    items = database.list_items(limit=10)
+
+    assert [item["id"] for item in items] == [second_id, first_id]
+    assert items[0]["title"] == "Second"
+    assert items[0]["original_text"] == "b"
+    assert items[0]["created_at"]
+
+
+def test_list_items_respects_limit(db_path):
+    for i in range(5):
+        database.save_summary(_make_content(f"Item {i}", "x"), "TL;DR: x")
+
+    assert len(database.list_items(limit=2)) == 2
+
+
+def test_list_items_empty_db(db_path):
+    assert database.list_items(limit=10) == []
+
+
+def test_search_items_matches_title(db_path):
+    match_id = database.save_summary(_make_content("Job interview tips", "x"), "TL;DR: x")
+    database.save_summary(_make_content("Nasi lemak recipe", "y"), "TL;DR: y")
+
+    matches, total = database.search_items("interview")
+
+    assert total == 1
+    assert [item["id"] for item in matches] == [match_id]
+
+
+def test_search_items_matches_summary_and_original_text(db_path):
+    by_summary = database.save_summary(_make_content("A", "unrelated body"), "TL;DR: mentions STAR method")
+    by_text = database.save_summary(_make_content("B", "talks about STAR method here"), "TL;DR: unrelated")
+    database.save_summary(_make_content("C", "nothing relevant"), "TL;DR: nothing relevant")
+
+    matches, total = database.search_items("STAR")
+
+    assert total == 2
+    assert {item["id"] for item in matches} == {by_summary, by_text}
+
+
+def test_search_items_is_case_insensitive(db_path):
+    match_id = database.save_summary(_make_content("Interview Tips", "x"), "TL;DR: x")
+
+    matches, total = database.search_items("interview")
+
+    assert total == 1
+    assert matches[0]["id"] == match_id
+
+
+def test_search_items_no_match(db_path):
+    database.save_summary(_make_content("Something", "x"), "TL;DR: x")
+
+    matches, total = database.search_items("nonexistent-keyword")
+
+    assert matches == []
+    assert total == 0
+
+
+def test_search_items_respects_limit_but_reports_total(db_path):
+    for i in range(5):
+        database.save_summary(_make_content(f"Interview note {i}", "x"), "TL;DR: x")
+
+    matches, total = database.search_items("interview", limit=2)
+
+    assert len(matches) == 2
+    assert total == 5
