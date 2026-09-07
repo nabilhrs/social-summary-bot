@@ -1,23 +1,47 @@
-# Deploying to a free-tier cloud VM
+# Deploying to a cloud VM
 
 The bot uses long-polling, not a webhook, so it needs no public URL, no
 inbound ports, and no HTTPS certificate — just *some* machine that keeps
-`python main.py` running and can reach the internet outbound. This guide
-uses **Oracle Cloud Infrastructure's Always Free tier**, which (unlike AWS/
-GCP's free tiers) gives genuinely perpetual free compute, not just a
-12-month trial. A low-cost VPS (DigitalOcean/Linode/Hetzner, ~$4-6/month)
-works identically from step 3 onward if you'd rather skip OCI's signup.
+`python main.py` running and can reach the internet outbound.
 
 I can't create the cloud account or provision the VM myself — that part is
-on you. Everything from SSH onward, I've scripted.
+on you. Everything from SSH onward, I've scripted, and it's identical no
+matter which host you pick.
 
-## 1. Create an Oracle Cloud account
+## 1. Pick a host and launch a VM
+
+**Option A — a low-cost VPS (recommended).** ~$4-6/month, no free-tier
+capacity roulette, a VM within a minute or two of signing up. Any provider
+works identically from step 2 onward; DigitalOcean is a reasonable default
+for the simplest signup flow:
+
+1. Sign up at [digitalocean.com](https://www.digitalocean.com) (or
+   [Hetzner](https://www.hetzner.com/cloud) for the cheapest option, or
+   [Linode](https://www.linode.com) — all three work the same way here).
+2. **Create → Droplets** (DigitalOcean's name for a VM).
+3. **Image:** Ubuntu, latest LTS (24.04).
+4. **Size/Plan:** the cheapest "Basic" / shared-CPU tier — 1GB RAM is
+   plenty for this bot, which is mostly waiting on network I/O, not doing
+   heavy compute.
+5. **Datacenter region:** whichever is closest to you; it doesn't matter
+   functionally.
+6. **Authentication:** add your SSH public key (recommended) or set a
+   root password.
+7. Create it, and note the droplet's public IP address once it's up.
+
+**Option B — Oracle Cloud's Always Free tier**, which (unlike AWS/GCP's
+free tiers) is genuinely perpetual free compute rather than a 12-month
+trial — worth it if you don't mind some setup friction and possible
+capacity waits. Steps below; skip to [step 2](#2-ssh-in-and-deploy) if
+you went with Option A.
+
+### Create an Oracle Cloud account
 
 Sign up at [cloud.oracle.com](https://cloud.oracle.com). Identity
 verification requires a card on file, but the Always Free resources used
 here incur no charge as long as you stay within the free-tier shapes below.
 
-## 2. Launch an Always Free Compute instance
+### Launch an Always Free Compute instance
 
 From the OCI console: **Compute → Instances → Create Instance**.
 
@@ -41,8 +65,8 @@ From the OCI console: **Compute → Instances → Create Instance**.
     Availability Domain if your region's dropdown offers more than one
     (many regions only have one, in which case this won't help), or just
     retry later — capacity fluctuates as other free-tier users release
-    instances. If neither pans out, a cheap VPS (see the intro above) sidesteps
-    the capacity issue entirely.
+    instances. If neither pans out, Option A above sidesteps the capacity
+    issue entirely.
 - **Networking:** every Compute instance must attach to a subnet inside a
   Virtual Cloud Network (VCN) — on a brand-new account you likely don't
   have one yet, so:
@@ -69,7 +93,11 @@ From the OCI console: **Compute → Instances → Create Instance**.
 
 Once running, note the instance's public IP address.
 
-## 3. SSH in and deploy
+## 2. SSH in and deploy
+
+Use the username your provider set up: `ubuntu` on an OCI or DigitalOcean
+Ubuntu image, `root` on a fresh Hetzner/Linode Ubuntu image unless you
+created a different user during setup.
 
 ```bash
 ssh ubuntu@<your-instance-ip>
@@ -89,7 +117,13 @@ Fill in `TELEGRAM_BOT_TOKEN`, `AUTHORIZED_USER_IDS`, and `GEMINI_API_KEY`
 (same values as your local `.env` — see the main [README](README.md#setup)
 for what each one means).
 
-## 4. Run it as a persistent service
+## 3. Run it as a persistent service
+
+The service file assumes user `ubuntu` and `/home/ubuntu/social-summary-bot`.
+If you SSH'd in as `root` instead (common on Hetzner/Linode), edit
+`deploy/social-summary-bot.service` first and change `User=ubuntu` and the
+`/home/ubuntu/...` paths to `root` / `/root/...` (or whatever user/path you
+actually used).
 
 ```bash
 sudo cp deploy/social-summary-bot.service /etc/systemd/system/
