@@ -25,16 +25,24 @@ From the OCI console: **Compute → Instances → Create Instance**.
 - **Shape:** two options are Always Free-eligible:
   - `VM.Standard.E2.1.Micro` (AMD, x86) — smaller (1/8 OCPU, 1GB RAM), but
     reliably available and plenty for this bot, which is mostly waiting on
-    network I/O, not doing heavy compute. **Start with this one.**
+    network I/O, not doing heavy compute. **Start with this one.** In the
+    shape picker it's easy to miss: click **"Change shape"**, and under the
+    **Virtual machine** tab look inside **"Specialty and previous
+    generation"** — that section is collapsed by default, and this shape
+    lives there since it's an older-generation x86 shape. It won't show up
+    in the default expanded list next to A1.Flex/A4.Flex/E5.Flex.
   - `VM.Standard.A1.Flex` (ARM) — a much larger free allowance (up to 4
     OCPU / 24GB RAM total across instances), but its free capacity is
     extremely popular and frequently exhausted — expect
     `Out of capacity for shape VM.Standard.A1.Flex in availability domain
-    ...` on many attempts. If you want it anyway: try a different
+    ...` on many attempts. If `E2.1.Micro` truly isn't available on your
+    tenancy either (a minority of newer accounts only get A1.Flex
+    Always-Free eligibility) and you want A1.Flex anyway: try a different
     Availability Domain if your region's dropdown offers more than one
     (many regions only have one, in which case this won't help), or just
     retry later — capacity fluctuates as other free-tier users release
-    instances.
+    instances. If neither pans out, a cheap VPS (see the intro above) sidesteps
+    the capacity issue entirely.
 - **Networking:** every Compute instance must attach to a subnet inside a
   Virtual Cloud Network (VCN) — on a brand-new account you likely don't
   have one yet, so:
