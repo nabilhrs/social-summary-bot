@@ -155,6 +155,36 @@ name.
 
 ---
 
+## 7. `/help` crashed with `Can't parse entities: can't find end of the entity`
+
+**Symptom:** Every `/help` call (and the "❓ Help" quick-action button) threw
+`telegram.error.BadRequest: Can't parse entities: can't find end of the
+entity starting at byte offset 970`, first seen live on the VM deployment.
+
+**Cause:** `HELP_TEXT` (`app/bot/commands.py`) is sent with
+`parse_mode="Markdown"`. Telegram's legacy Markdown parser treats any bare
+`_` as an italic marker with no word-boundary awareness. The placeholder
+names `<keep_id>`, `<absorb_id>`, and `<api_key>` contributed three
+underscores total — an odd number, so the last one had no closing partner
+and the whole message failed to parse.
+
+**Fix:** Wrapped every command usage line in backticks (e.g.
+`` `/merge <keep_id> <absorb_id>` ``) — text inside a code span isn't
+scanned for further entities, so the underscores inside are inert. Also
+renders as monospace, which reads better for command syntax anyway.
+
+**Lesson:** Any static string sent with `parse_mode="Markdown"` needs its
+literal-vs-entity character count checked before trusting it — legacy
+Markdown counts `_`/`*`/`` ` `` globally across the whole message, not
+per-clause, so unrelated placeholder names elsewhere in the same string can
+break parsing. A quick guard: `text.count("_") % 2 == 0` (and likewise for
+`*`) catches this before it ships. This one only surfaced on the real VM
+deployment, not in local dev — worth a live `/help` check after any
+`HELP_TEXT`/`WELCOME_TEXT` edit, since no test was exercising the actual
+Telegram parse call.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The
