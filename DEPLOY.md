@@ -10,10 +10,50 @@ matter which host you pick.
 
 ## 1. Pick a host and launch a VM
 
-**Option A — a low-cost VPS (recommended).** ~$4-6/month, no free-tier
-capacity roulette, a VM within a minute or two of signing up. Any provider
-works identically from step 2 onward; DigitalOcean is a reasonable default
-for the simplest signup flow:
+Two providers offer **genuinely perpetual free compute** (not a 12-month
+trial that starts charging you later) — both are worth trying before
+paying anything. A low-cost VPS is listed last as a fallback only, in case
+both free options stay stuck.
+
+Both free providers require a card on file for identity verification, but
+neither charges you as long as you stay within the free-tier limits
+described below.
+
+**Option A — Oracle Cloud's Always Free tier.** Steps below.
+
+**Option B — Google Cloud's Always Free `e2-micro`.** A single small VM
+(2 vCPU burstable, 1GB RAM), free forever, but only in one of three
+regions (`us-west1`, `us-central1`, `us-east1`) and only one instance at a
+time — not capacity-gated the way OCI's ARM shape is, so it's a good
+option if OCI keeps returning capacity errors:
+
+1. Sign up at [console.cloud.google.com](https://console.cloud.google.com)
+   and create a project (any name).
+2. Search **"Compute Engine"** in the top search bar and open it — first
+   visit takes a minute to enable the API.
+3. **Compute Engine → VM instances → Create Instance.**
+4. **Name:** anything.
+5. **Region:** must be `us-west1`, `us-central1`, or `us-east1` — Always
+   Free eligibility is locked to these three. Zone within the region
+   doesn't matter.
+6. **Machine type:** `e2-micro` (under the E2 series).
+7. **Boot disk:** click Change, pick Ubuntu 22.04 or 24.04 LTS, keep the
+   disk at or under 30GB (the default 10GB is fine) to stay in the free
+   tier.
+8. Leave firewall/networking at their defaults — the bot only makes
+   outbound connections, so nothing needs opening.
+9. Click **Create**, and note the instance's external IP once it's up.
+10. To connect, click the **SSH** button next to the instance in the GCP
+    console — it opens a browser-based terminal with no key setup needed.
+    Once connected, run `whoami` to see your actual username (it won't be
+    `ubuntu`) — you'll need it for step 3 below.
+
+Skip to [step 2](#2-ssh-in-and-deploy) if you used Option B.
+
+**Fallback — a low-cost VPS (~$4-6/month), only if both free options are
+stuck.** No free-tier capacity roulette, a VM within a minute of signing
+up. Any provider works identically from step 2 onward; DigitalOcean is a
+reasonable default for the simplest signup flow:
 
 1. Sign up at [digitalocean.com](https://www.digitalocean.com) (or
    [Hetzner](https://www.hetzner.com/cloud) for the cheapest option, or
@@ -28,12 +68,6 @@ for the simplest signup flow:
 6. **Authentication:** add your SSH public key (recommended) or set a
    root password.
 7. Create it, and note the droplet's public IP address once it's up.
-
-**Option B — Oracle Cloud's Always Free tier**, which (unlike AWS/GCP's
-free tiers) is genuinely perpetual free compute rather than a 12-month
-trial — worth it if you don't mind some setup friction and possible
-capacity waits. Steps below; skip to [step 2](#2-ssh-in-and-deploy) if
-you went with Option A.
 
 ### Create an Oracle Cloud account
 
@@ -65,8 +99,8 @@ From the OCI console: **Compute → Instances → Create Instance**.
     Availability Domain if your region's dropdown offers more than one
     (many regions only have one, in which case this won't help), or just
     retry later — capacity fluctuates as other free-tier users release
-    instances. If neither pans out, Option A above sidesteps the capacity
-    issue entirely.
+    instances. If neither pans out, Option B (Google Cloud) above is free
+    and isn't capacity-gated the same way.
 - **Networking:** every Compute instance must attach to a subnet inside a
   Virtual Cloud Network (VCN) — on a brand-new account you likely don't
   have one yet, so:
@@ -96,8 +130,9 @@ Once running, note the instance's public IP address.
 ## 2. SSH in and deploy
 
 Use the username your provider set up: `ubuntu` on an OCI or DigitalOcean
-Ubuntu image, `root` on a fresh Hetzner/Linode Ubuntu image unless you
-created a different user during setup.
+Ubuntu image, `root` on a fresh Hetzner/Linode Ubuntu image, or whatever
+`whoami` printed in the GCP browser SSH terminal — unless you created a
+different user during setup.
 
 ```bash
 ssh ubuntu@<your-instance-ip>
@@ -120,10 +155,10 @@ for what each one means).
 ## 3. Run it as a persistent service
 
 The service file assumes user `ubuntu` and `/home/ubuntu/social-summary-bot`.
-If you SSH'd in as `root` instead (common on Hetzner/Linode), edit
-`deploy/social-summary-bot.service` first and change `User=ubuntu` and the
-`/home/ubuntu/...` paths to `root` / `/root/...` (or whatever user/path you
-actually used).
+If you SSH'd in as something else — `root` on Hetzner/Linode, or your GCP
+username — edit `deploy/social-summary-bot.service` first and change
+`User=ubuntu` and the `/home/ubuntu/...` paths to match whatever user and
+home directory you actually used (`pwd` and `whoami` will tell you).
 
 ```bash
 sudo cp deploy/social-summary-bot.service /etc/systemd/system/
