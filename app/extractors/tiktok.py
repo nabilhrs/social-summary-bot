@@ -6,16 +6,10 @@ content (visuals + speech) — the caption alone is often minimal or
 missing, and the point is to summarize the video itself, not just
 whatever text the poster typed.
 
-Unlike Threads' Open Graph approach (a universally-sanctioned mechanism
-every site supports for link previews), downloading a TikTok video isn't
-something TikTok's terms permit. Built at the user's explicit, informed
-request after that tradeoff was stated plainly (see docs/summarizer_bot_prd_v2.md)
-— they weighed it against having to manually paste captions and chose this
-anyway. yt-dlp needs its curl-cffi "impersonation" extra to get past
-TikTok's bot-challenge at all: verified live before writing this that a
-plain fetch, and even yt-dlp without impersonation, gets blocked with a JS
-challenge page (TikTok pushes back on automated access harder than any
-other platform this bot talks to).
+TikTok's terms restrict automated downloading, so this extractor 
+is meant for personal use only (see the README). yt-dlp's curl-cffi 
+"impersonation" extra is required: without it, TikTok answers with a 
+JS challenge page instead of the video.
 
 PRD V2 per-user key revision: takes the caller's own resolved Gemini API
 key rather than a fixed client — video calls are the most expensive kind,

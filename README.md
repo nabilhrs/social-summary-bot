@@ -62,7 +62,8 @@ Message the bot directly, or tap a command from Telegram's "/" menu:
     mechanism every app uses for link previews) — this only captures the
     linked post's own caption, not replies, so the bot always notes that
     limitation.
-  - **TikTok** videos are downloaded and actually watched — Gemini
+  - **TikTok** videos (personal use only — TikTok's terms restrict automated
+    downloading) are downloaded and actually watched — Gemini
     summarizes what's shown and said, not just the caption. This takes
     noticeably longer (expect 30s+); the bot sends a heads-up while it
     works.

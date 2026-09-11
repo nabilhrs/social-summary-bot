@@ -15,11 +15,10 @@ def looks_like_url(text: str) -> bool:
 # PRD V2 2.1 — platforms with no way to get post content without violating
 # their terms or scraping a private API. Detected up front so we skip a
 # doomed fetch and give an honest, platform-specific fallback instead of a
-# generic one. Currently empty: Threads (Open Graph tags — a ToS-clean web
-# standard, unlike the oEmbed API) and TikTok (yt-dlp video download — this
-# one *does* cross TikTok's terms, built at the user's explicit informed
-# request) both got real extraction instead. Kept as an extensibility point
-# for a future platform that turns out to have no viable path at all.
+# generic one. Currently empty: Threads (Open Graph tags) and TikTok (yt-dlp
+# video download, personal use only — see the README) both got real
+# extraction instead. Kept as an extensibility point for a future platform
+# that turns out to have no viable path at all.
 _UNSUPPORTED_PLATFORM_DOMAINS: dict[str, str] = {}
 
 _THREADS_DOMAINS = ("threads.net", "threads.com")
