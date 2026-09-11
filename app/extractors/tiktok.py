@@ -9,7 +9,7 @@ whatever text the poster typed.
 Unlike Threads' Open Graph approach (a universally-sanctioned mechanism
 every site supports for link previews), downloading a TikTok video isn't
 something TikTok's terms permit. Built at the user's explicit, informed
-request after that tradeoff was stated plainly (see summarizer_bot_prd_v2.md)
+request after that tradeoff was stated plainly (see docs/summarizer_bot_prd_v2.md)
 — they weighed it against having to manually paste captions and chose this
 anyway. yt-dlp needs its curl-cffi "impersonation" extra to get past
 TikTok's bot-challenge at all: verified live before writing this that a

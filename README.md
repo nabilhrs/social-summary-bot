@@ -10,10 +10,10 @@ Multiple people can use the same bot — each person's saved items are
 private to them, gated by a hardcoded allowlist (not open to the public
 internet; see Setup).
 
-See [summarizer_bot_prd_v1.md](summarizer_bot_prd_v1.md) for the original
-spec and [summarizer_bot_prd_v2.md](summarizer_bot_prd_v2.md) for what's
-been added since. [CHECKLIST.md](CHECKLIST.md) is the up-to-date status of
-every feature. [memory.md](memory.md) logs bugs found through real use and
+See [the V1 spec](docs/summarizer_bot_prd_v1.md) for the original
+spec and [the V2 spec](docs/summarizer_bot_prd_v2.md) for what's
+been added since. [CHECKLIST.md](docs/CHECKLIST.md) is the up-to-date status of
+every feature. [memory.md](docs/memory.md) logs bugs found through real use and
 why they happened — worth a read before touching the extraction or
 Combine Mode code.
 
@@ -109,7 +109,7 @@ venv\Scripts\pytest
 Pure logic (parsing, formatting, database queries) is unit tested.
 Network- and filesystem-dependent extraction (web/Threads/TikTok fetches,
 Gemini calls) is verified live rather than mocked — see the commit history
-and `memory.md` for what's been checked and how.
+and [`docs/memory.md`](docs/memory.md) for what's been checked and how.
 
 ## Project structure
 
