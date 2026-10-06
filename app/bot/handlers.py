@@ -25,6 +25,7 @@ from app.extractors.base import (
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
+from app.ai.gemini import INVALID_KEY, QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
     save_summary,
@@ -49,6 +50,21 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
+GEMINI_ERROR_TEXTS = {
+    QUOTA_DAILY: (
+        "Your Gemini API key has used up today's free quota on every model I can "
+        "fall back to. It resets at midnight Pacific time — send this again after that."
+    ),
+    QUOTA_RATE: "Gemini's per-minute rate limit was hit. Wait a minute and send this again.",
+    INVALID_KEY: (
+        "Gemini rejected the API key. Update GEMINI_API_KEY in the server's .env "
+        "(then restart the bot), or send /setkey <new-key>."
+    ),
+    UNAVAILABLE: (
+        "Gemini is overloaded or unreachable right now — I retried and tried backup "
+        "models too. Try again in a few minutes."
+    ),
+}
 NO_API_KEY_TEXT = (
     "You need your own Gemini API key before I can generate summaries for you. "
     "Get a free one at https://aistudio.google.com/apikey, then send /setkey <your-key>."
@@ -63,6 +79,10 @@ THREADS_LIMITATION_NOTE = (
 
 # PRD 5.5 — how many recent saved items to check new content against.
 _RECENT_HISTORY_LIMIT = 10
+
+
+def _gemini_error_text(exc: GeminiError) -> str:
+    return GEMINI_ERROR_TEXTS.get(exc.kind, SUMMARY_FAILED_TEXT)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -99,7 +119,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if is_tiktok_url(raw_text):
             await message.reply_text(TIKTOK_PROCESSING_TEXT)
-            extracted = await fetch_tiktok_video(raw_text, api_key)
+            try:
+                extracted = await fetch_tiktok_video(raw_text, api_key)
+            except GeminiError as exc:
+                await message.reply_text(_gemini_error_text(exc))
+                return
             if extracted is None:
                 await message.reply_text(EXTRACTION_FAILED_TEXT)
                 return
@@ -122,9 +146,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     recent_items = await asyncio.to_thread(get_recent, user.id, _RECENT_HISTORY_LIMIT)
 
-    summary = await summarize(content, recent_items, api_key)
-    if summary is None:
-        await message.reply_text(SUMMARY_FAILED_TEXT)
+    try:
+        summary = await summarize(content, recent_items, api_key)
+    except GeminiError as exc:
+        await message.reply_text(_gemini_error_text(exc))
         return
 
     await message.reply_text(summary.text)
@@ -193,11 +218,13 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Couldn't find one of those entries anymore — nothing merged.")
         return
 
-    merged = await merge_summaries(
-        old_row["original_text"], new_row["original_text"], old_row["title"], new_row["title"], api_key
-    )
-    if merged is None:
-        await query.edit_message_text(SUMMARY_FAILED_TEXT)
+    try:
+        merged = await merge_summaries(
+            old_row["original_text"], new_row["original_text"], old_row["title"], new_row["title"], api_key
+        )
+    except GeminiError as exc:
+        # Sent as a new message so the merge buttons stay usable for a retry.
+        await query.message.reply_text(_gemini_error_text(exc))
         return
 
     try:

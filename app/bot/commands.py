@@ -8,8 +8,8 @@ import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from google import genai
 
+from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
 from app.config import config
 from app.database.database import (
     list_items,
@@ -51,8 +51,6 @@ HELP_TEXT = (
     "`/undo <id>` — revert a merged item back to its pre-merge summary\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
 )
-
-_VALIDATION_MODEL = "gemini-3.6-flash"
 
 _DEFAULT_LIST_LIMIT = 10
 _MAX_LIST_LIMIT = 50
@@ -343,13 +341,13 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def _validate_gemini_key(api_key: str) -> bool:
     """A tiny live call against the key itself — so a typo or expired key
-    fails immediately with a clear message, not on the user's next summary."""
+    fails immediately with a clear message, not on the user's next summary.
+    Quota or overload errors mean Gemini accepted the key, so they count as valid."""
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(model=_VALIDATION_MODEL, contents="Say OK.")
-        return bool((response.text or "").strip())
-    except Exception:
-        return False
+        generate_text(api_key, "Say OK.")
+    except GeminiError as exc:
+        return exc.kind in (QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE)
+    return True
 
 
 async def setkey_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

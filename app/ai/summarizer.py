@@ -1,27 +1,20 @@
 """
 AI summarization (PRD 5.4) and Combine Mode's related-item flagging + merge (5.5).
 
-On any API failure, returns None so the caller can show the fixed error message
-from PRD 5.9 rather than leaking exception details to the user.
-
-PRD V2 per-user key revision: every call takes the caller's own resolved
-Gemini API key (see app/database/database.py's resolve_gemini_api_key)
-rather than using one fixed client — each authorized user's usage runs on
-their own key, not a shared one.
+On API failure, raises app.ai.gemini.GeminiError — its `kind` lets the
+caller tell the user *why* (quota, bad key, Gemini overloaded) instead of a
+generic error. Retries and model fallback live in app/ai/gemini.py.
 """
 import asyncio
 import logging
 import re
 from dataclasses import dataclass
 
-from google import genai
-
+from app.ai.gemini import FAILED, GeminiError, generate_text
 from app.ai.prompts import build_summary_prompt, build_merge_prompt
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "gemini-3.6-flash"
-_TIMEOUT_SECONDS = 30
 _RELATED_ID_RE = re.compile(r"RELATED_ID\s*:\s*\**\s*#?\s*(NONE|\d+)", re.IGNORECASE)
 
 
@@ -45,52 +38,21 @@ def _extract_related_id(text: str) -> tuple[str, int | None]:
     return cleaned, related_id
 
 
-async def _generate(prompt: str, api_key: str) -> str | None:
-    try:
-        client = genai.Client(api_key=api_key)
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model=_MODEL,
-                contents=prompt,
-            ),
-            timeout=_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        logger.error("Gemini API call timed out after %ss", _TIMEOUT_SECONDS)
-        return None
-    except Exception:
-        logger.exception("Gemini API call failed")
-        return None
-
-    text = (response.text or "").strip()
-    if not text:
-        logger.warning("Gemini returned an empty response")
-        return None
-    return text
-
-
-async def summarize(
-    content: dict, recent_items: list[dict] | None, api_key: str
-) -> Summary | None:
+async def summarize(content: dict, recent_items: list[dict] | None, api_key: str) -> Summary:
     prompt = build_summary_prompt(content, recent_items)
-    text = await _generate(prompt, api_key)
-    if text is None:
-        return None
+    text = await asyncio.to_thread(generate_text, api_key, prompt)
 
     clean_text, related_id = _extract_related_id(text)
     if not clean_text:
         logger.warning("Gemini summary was empty after stripping RELATED_ID line")
-        return None
+        raise GeminiError(FAILED)
 
     return Summary(text=clean_text, related_id=related_id)
 
 
 async def merge_summaries(
     old_text: str, new_text: str, old_title: str | None, new_title: str | None, api_key: str
-) -> Summary | None:
+) -> Summary:
     prompt = build_merge_prompt(old_text, new_text, old_title, new_title)
-    text = await _generate(prompt, api_key)
-    if text is None:
-        return None
+    text = await asyncio.to_thread(generate_text, api_key, prompt)
     return Summary(text=text)

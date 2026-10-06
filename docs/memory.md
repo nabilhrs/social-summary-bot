@@ -185,6 +185,39 @@ Telegram parse call.
 
 ---
 
+## 8. "Something went wrong while generating the summary" on a Threads link
+
+**Symptom:** On the VM, a Threads link replied with the generic summary
+failure message. The same link summarized fine when replayed locally.
+
+**Cause:** Every Gemini call was a single attempt on a single model, and
+every error collapsed into one generic message. When reproducing it, Gemini
+returned `503 UNAVAILABLE — "This model is currently experiencing high
+demand"` on `gemini-3.6-flash` twice in a row (and on `3.7`/`3.8-flash`
+during the model survey). The free tier's per-model daily quota (429) is the
+other common cause. Both are temporary or model-specific, so failing outright
+and saying only "try again" was wrong on both counts.
+
+**Fix:** All Gemini text generation now goes through
+`app/ai/gemini.py:generate_text()`. It retries 5xx and network
+timeouts once, moves to the next model on 429 or 404 (so a retired model
+falls through too, unlike bug #1), and stops immediately on a rejected key.
+If every model fails, it raises `GeminiError(kind)` and the handler shows a
+message for that kind. Fallbacks are `gemini-3.5-flash-lite`, then
+`gemini-3.1-flash-lite`. The fallback chain was verified live against real
+503s. `/setkey` validation also no longer rejects a valid key that's merely
+out of quota.
+
+**Lesson:** For an external API with free-tier limits and demand spikes,
+"one attempt, generic error" isn't enough. Classify the failure (quota,
+auth, overload, other), retry only what's retryable, and tell the user
+which one happened. Before picking fallback models, test them live for every
+input type the bot sends (text, both summary formats, video). A model
+showing up in `models.list()` doesn't mean it works: `gemini-2.5-flash` is
+still listed but retired.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The

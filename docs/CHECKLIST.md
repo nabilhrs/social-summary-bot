@@ -22,8 +22,9 @@ Status as of 2026-09-06, after Combine Mode + live-testing bug fixes
 - ✅ `summarize(content) -> Summary`
 - ✅ Fixed TL;DR / KEY POINTS / TAKEAWAY format
 - ✅ Gemini API (`gemini-3.6-flash`, corrected from the retired `gemini-2.5-flash`)
-- ✅ Fixed error message on API failure
-- ✅ 30s timeout so a hung call can't block forever
+- ✅ Retry + model fallback (`app/ai/gemini.py`, Oct 2026): transient 5xx/timeouts retried once, then falls back to `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` (separate free-tier quota each; all three verified to handle text, both summary formats, `RELATED_ID`, and video)
+- ✅ Specific error messages per failure: daily quota, per-minute rate limit, rejected key, Gemini overloaded — generic message only for anything else
+- ✅ 30s per-request timeout (60s for TikTok video), bounded by an overall deadline
 
 ## 5.5 Combine Mode
 - ✅ Pulls last ~10 saved items (title + summary) before summarizing

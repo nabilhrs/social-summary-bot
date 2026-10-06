@@ -24,10 +24,13 @@ import time
 import yt_dlp
 from google import genai
 
+from app.ai.gemini import GeminiError, generate_text
+
 logger = logging.getLogger(__name__)
 
-_MODEL = "gemini-3.6-flash"
-_OVERALL_TIMEOUT_SECONDS = 120
+_OVERALL_TIMEOUT_SECONDS = 180
+_DESCRIBE_TIMEOUT_SECONDS = 60
+_DESCRIBE_DEADLINE_SECONDS = 100
 _MAX_FILESIZE_BYTES = 200 * 1024 * 1024
 _MAX_UPLOAD_POLL_SECONDS = 60
 
@@ -84,14 +87,14 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
                 logger.warning("Uploaded video never became active (state=%s) for %s", uploaded.state, url)
                 return None
 
-            response = client.models.generate_content(
-                model=_MODEL,
-                contents=[uploaded, _DESCRIBE_PROMPT],
+            description = generate_text(
+                api_key,
+                [uploaded, _DESCRIBE_PROMPT],
+                timeout_seconds=_DESCRIBE_TIMEOUT_SECONDS,
+                deadline_seconds=_DESCRIBE_DEADLINE_SECONDS,
             )
-            description = (response.text or "").strip()
-            if not description:
-                logger.warning("Gemini returned an empty video description for %s", url)
-                return None
+        except GeminiError:
+            raise
         except Exception:
             logger.exception("Gemini video description failed for %s", url)
             return None
@@ -108,6 +111,8 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
 
 
 async def fetch_and_extract(url: str, api_key: str) -> dict | None:
+    """Returns None if the video couldn't be downloaded or processed;
+    raises GeminiError if Gemini itself refused (quota, bad key, overload)."""
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(_download_and_describe, url, api_key),
