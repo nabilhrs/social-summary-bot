@@ -89,12 +89,13 @@ def save_summary(content: dict, summary_text: str, user_id: int) -> int:
         return cursor.lastrowid
 
 
-def get_recent(user_id: int, limit: int = 10) -> list[dict]:
+def get_recent(user_id: int, limit: int | None = 10) -> list[dict]:
+    """Newest first. limit=None returns every item."""
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT id, title, summary FROM summaries WHERE user_id = ? ORDER BY id DESC LIMIT ?",
-            (user_id, limit),
+            (user_id, -1 if limit is None else limit),
         ).fetchall()
     return [dict(row) for row in rows]
 

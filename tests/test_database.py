@@ -89,6 +89,13 @@ def test_get_recent_respects_limit(db_path):
     assert len(database.get_recent(USER, limit=2)) == 2
 
 
+def test_get_recent_none_limit_returns_everything(db_path):
+    for i in range(15):
+        database.save_summary(_make_content(f"Item {i}", "x"), "TL;DR: x", USER)
+
+    assert len(database.get_recent(USER, limit=None)) == 15
+
+
 def test_get_recent_excludes_other_users_items(db_path):
     database.save_summary(_make_content("Mine", "a"), "TL;DR: mine", USER)
     database.save_summary(_make_content("Theirs", "b"), "TL;DR: theirs", OTHER_USER)

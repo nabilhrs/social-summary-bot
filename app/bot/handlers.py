@@ -27,6 +27,7 @@ from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
 from app.ai.gemini import INVALID_KEY, QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError
+from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
     save_summary,
@@ -78,7 +79,8 @@ THREADS_LIMITATION_NOTE = (
     "if you want the full picture."
 )
 
-# PRD 5.5 — how many recent saved items to check new content against.
+# PRD 5.5 — recent saved items always checked against new content; older
+# keyword-matched items are added on top (see app/ai/related.py).
 _RECENT_HISTORY_LIMIT = 10
 
 
@@ -145,7 +147,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         content = normalize_pasted_text(raw_text)
 
-    recent_items = await asyncio.to_thread(get_recent, user.id, _RECENT_HISTORY_LIMIT)
+    all_items = await asyncio.to_thread(get_recent, user.id, None)
+    recent_items = pick_candidates(content["text"], all_items, recent_limit=_RECENT_HISTORY_LIMIT)
 
     try:
         summary = await summarize(content, recent_items, api_key)
