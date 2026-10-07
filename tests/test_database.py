@@ -169,36 +169,8 @@ def test_update_merged_summary_does_not_touch_another_users_row(db_path):
     assert row["summary"] == "TL;DR: theirs"
 
 
-def test_list_items_returns_newest_first(db_path):
-    first_id = database.save_summary(_make_content("First", "a"), "TL;DR: first", USER)
-    second_id = database.save_summary(_make_content("Second", "b"), "TL;DR: second", USER)
-
-    items = database.list_items(USER, limit=10)
-
-    assert [item["id"] for item in items] == [second_id, first_id]
-    assert items[0]["title"] == "Second"
-    assert items[0]["original_text"] == "b"
-    assert items[0]["created_at"]
 
 
-def test_list_items_respects_limit(db_path):
-    for i in range(5):
-        database.save_summary(_make_content(f"Item {i}", "x"), "TL;DR: x", USER)
-
-    assert len(database.list_items(USER, limit=2)) == 2
-
-
-def test_list_items_empty_db(db_path):
-    assert database.list_items(USER, limit=10) == []
-
-
-def test_list_items_excludes_other_users_items(db_path):
-    database.save_summary(_make_content("Mine", "a"), "TL;DR: mine", USER)
-    database.save_summary(_make_content("Theirs", "b"), "TL;DR: theirs", OTHER_USER)
-
-    items = database.list_items(USER, limit=10)
-
-    assert [item["title"] for item in items] == ["Mine"]
 
 
 def test_search_items_matches_title(db_path):

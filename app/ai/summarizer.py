@@ -28,6 +28,7 @@ _TAG_LINE_RE = re.compile(
 _RELATED_ID_VALUE_RE = re.compile(r"#?\s*(\d+)")
 _MAX_TITLE_CHARS = 80
 _MAX_CATEGORY_CHARS = 30
+_MAX_CATEGORY_BYTES = 40
 _ORGANIZE_BATCH_SIZE = 40
 
 
@@ -75,6 +76,9 @@ def clean_category(value: str | None, existing: list[str]) -> str | None:
     spelling when it matches case-insensitively."""
     name = " ".join((value or "").split()).strip("\"'“”‘’<>[].")
     name = name[:_MAX_CATEGORY_CHARS].strip()
+    # Category names travel inside Telegram button data, capped at 64 bytes.
+    while len(name.encode("utf-8")) > _MAX_CATEGORY_BYTES:
+        name = name[:-1].rstrip()
     if not name:
         return None
     for existing_name in existing:

@@ -132,6 +132,7 @@ def test_clean_category_new_name_is_capitalized_and_trimmed():
     assert clean_category("<Travel>", []) == "Travel"
     assert clean_category("   ", []) is None
     assert len(clean_category("x" * 100, [])) == 30
+    assert len(clean_category("🍜" * 30, []).encode("utf-8")) <= 40
 
 
 def test_parse_json_array_handles_code_fences_and_preamble():

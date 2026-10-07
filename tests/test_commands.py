@@ -1,6 +1,5 @@
+from app.bot.browse import display_title as _display_title, format_item_line as _format_item_line
 from app.bot.commands import (
-    _display_title,
-    _format_item_line,
     _format_item_list,
     _parse_id_arg,
     _parse_two_id_args,

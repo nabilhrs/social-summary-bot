@@ -33,6 +33,7 @@ from app.bot.commands import (
     move_command,
     setkey_command,
     handle_quick_action_callback,
+    handle_list_callback,
     handle_delete_request_callback,
 )
 from app.bot.handlers import (
@@ -115,6 +116,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_request_callback, pattern=r"^delconfirm:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
+    app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[auc].*)$"))
     app.add_error_handler(log_error)
 
     return app

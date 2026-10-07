@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
@@ -18,13 +19,13 @@ from app.database.database import (
     get_all_items,
     get_categories,
     update_fields,
-    list_items,
     search_items,
     get_by_id,
     undo_merge,
     set_user_api_key,
     resolve_gemini_api_key,
 )
+from app.bot.browse import CATEGORY, MENU_CALLBACK, decode_page, format_item_line, render_menu, render_page
 from app.bot.export import build_json, build_markdown
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
@@ -74,12 +75,11 @@ HELP_TEXT = (
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
 )
 
-_DEFAULT_LIST_LIMIT = 10
-_MAX_LIST_LIMIT = 50
+_SEARCH_LIMIT = 10
 _MAX_REPLY_CHARS = 3500  # safety margin under Telegram's 4096-char message limit
 _VIEW_HINT = "\nUse /view <id> to read the full summary."
 # Above this many items, a delete button per row would be an unreadable wall
-# of buttons — large /list counts fall back to typing /delete <id> instead.
+# of buttons — large result sets fall back to typing /delete <id> instead.
 _MAX_ITEMS_FOR_DELETE_BUTTONS = 20
 
 
@@ -89,25 +89,13 @@ def _delete_keyboard_for(items: list[dict]) -> InlineKeyboardMarkup | None:
     return build_list_delete_keyboard(items)
 
 
-def _display_title(item: dict) -> str:
-    if item.get("title"):
-        return item["title"]
-    preview = item["original_text"].strip().splitlines()[0].strip()
-    return (preview[:60] + "…") if len(preview) > 60 else preview
-
-
-def _format_item_line(item: dict) -> str:
-    date = item["created_at"][:10]
-    return f"#{item['id']} — {_display_title(item)} ({date})"
-
-
 def _format_item_list(items: list[dict], header: str) -> str:
-    lines = [header] + [_format_item_line(item) for item in items]
+    lines = [header] + [format_item_line(item) for item in items]
     text = "\n".join(lines)
     budget = _MAX_REPLY_CHARS - len(_VIEW_HINT)
     if len(text) > budget:
         text = text[:budget].rsplit("\n", 1)[0]
-        text += "\n… (truncated — try a smaller /list count or a narrower /search)"
+        text += "\n… (truncated — try a narrower /search)"
     return text + _VIEW_HINT
 
 
@@ -132,7 +120,7 @@ def _parse_two_id_args(args: list[str]) -> tuple[int, int] | None:
 def _quick_action_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("📋 Show recent items", callback_data="quick:list")],
+            [InlineKeyboardButton("📚 Browse my notes", callback_data="quick:list")],
             [InlineKeyboardButton("❓ Help", callback_data="quick:help")],
         ]
     )
@@ -171,41 +159,52 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     _, action = query.data.split(":", 1)
     if action == "list":
-        items = list_items(user_id, _DEFAULT_LIST_LIMIT)
-        if not items:
-            await query.message.reply_text("You haven't saved anything yet.")
-            return
-        await query.message.reply_text(
-            _format_item_list(items, f"Last {len(items)} saved item(s):"),
-            reply_markup=_delete_keyboard_for(items),
-        )
+        text, markup = await render_menu(user_id)
+        await query.message.reply_text(text, reply_markup=markup)
     elif action == "help":
         await query.message.reply_text(HELP_TEXT, parse_mode="Markdown", reply_markup=_quick_action_keyboard())
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/list opens the category menu; /list <category> jumps straight into one."""
     user_id = update.effective_user.id if update.effective_user else None
     if user_id is None or not config.is_authorized(user_id):
         await update.message.reply_text("Sorry, this bot is private.")
         return
 
-    limit = _DEFAULT_LIST_LIMIT
     if context.args:
-        try:
-            limit = int(context.args[0])
-        except ValueError:
-            pass
-    limit = max(1, min(limit, _MAX_LIST_LIMIT))
+        wanted = " ".join(context.args).casefold()
+        categories = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
+        match = next((name for name in categories if name.casefold() == wanted), None)
+        if match is not None:
+            text, markup = await render_page(user_id, 0, CATEGORY, match)
+            await update.message.reply_text(text, reply_markup=markup)
+            return
+        await update.message.reply_text(f"No category called \"{' '.join(context.args)}\" — here are yours:")
 
-    items = list_items(user_id, limit)
-    if not items:
-        await update.message.reply_text("You haven't saved anything yet.")
+    text, markup = await render_menu(user_id)
+    await update.message.reply_text(text, reply_markup=markup)
+
+
+async def handle_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Category menu and Prev/Next taps — edits the same message in place."""
+    query = update.callback_query
+    user_id = update.effective_user.id if update.effective_user else None
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    if user_id is None or not config.is_authorized(user_id):
         return
 
-    await update.message.reply_text(
-        _format_item_list(items, f"Last {len(items)} saved item(s):"),
-        reply_markup=_delete_keyboard_for(items),
-    )
+    if query.data == MENU_CALLBACK:
+        text, markup = await render_menu(user_id)
+    else:
+        text, markup = await render_page(user_id, *decode_page(query.data))
+    try:
+        await query.edit_message_text(text, reply_markup=markup)
+    except BadRequest as exc:
+        if "not modified" not in str(exc).lower():
+            raise
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -219,7 +218,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     keyword = " ".join(context.args)
-    items, total = search_items(user_id, keyword, limit=_DEFAULT_LIST_LIMIT)
+    items, total = search_items(user_id, keyword, limit=_SEARCH_LIMIT)
     if not items:
         await update.message.reply_text(f"No matches found for \"{keyword}\".")
         return

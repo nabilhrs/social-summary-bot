@@ -188,17 +188,6 @@ def get_by_id(row_id: int, user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def list_items(user_id: int, limit: int = 10) -> list[dict]:
-    with sqlite3.connect(config.db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT id, title, original_text, created_at FROM summaries "
-            "WHERE user_id = ? ORDER BY id DESC LIMIT ?",
-            (user_id, limit),
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
 def search_items(user_id: int, keyword: str, limit: int = 10) -> tuple[list[dict], int]:
     """Case-insensitive substring search across title, summary, and
     original_text, scoped to one user. Returns (matches limited to
