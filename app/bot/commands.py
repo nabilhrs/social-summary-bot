@@ -7,6 +7,7 @@ app/bot/handlers.py covers both URL and pasted text without a command.
 import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
@@ -223,7 +224,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
 
-    await update.message.reply_text(format_full_item(item))
+    await update.message.reply_text(format_full_item(item), parse_mode=ParseMode.HTML)
 
 
 async def merge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

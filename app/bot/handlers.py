@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from app.config import config
@@ -35,7 +36,7 @@ from app.database.database import (
     delete_item,
     resolve_gemini_api_key,
 )
-from app.bot.formatting import format_full_item, build_merge_keyboard
+from app.bot.formatting import format_full_item, build_merge_keyboard, render_summary_html
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(_gemini_error_text(exc))
         return
 
-    await message.reply_text(summary.text)
+    await message.reply_text(render_summary_html(summary.text), parse_mode=ParseMode.HTML)
     if is_threads_content:
         await message.reply_text(THREADS_LIMITATION_NOTE)
 
@@ -200,7 +201,7 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if old_row is None:
             await query.message.reply_text(f"Couldn't find #{existing_id} anymore.")
             return
-        await query.message.reply_text(format_full_item(old_row))
+        await query.message.reply_text(format_full_item(old_row), parse_mode=ParseMode.HTML)
         return
 
     if decision == "no":
@@ -234,7 +235,10 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(SUMMARY_FAILED_TEXT)
         return
 
-    await query.edit_message_text(f"Merged into #{old_row['id']}:\n\n{merged.text}")
+    await query.edit_message_text(
+        f"<b>Merged into #{old_row['id']}:</b>\n\n{render_summary_html(merged.text)}",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

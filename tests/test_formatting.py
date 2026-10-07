@@ -1,4 +1,36 @@
-from app.bot.formatting import format_full_item, build_merge_keyboard, build_delete_keyboard, build_list_delete_keyboard
+from app.bot.formatting import (
+    build_delete_keyboard,
+    build_list_delete_keyboard,
+    build_merge_keyboard,
+    format_full_item,
+    render_summary_html,
+)
+
+
+def test_render_full_structure_bolds_labels_and_converts_bullets():
+    text = "TL;DR: Short.\nKEY POINTS:\n- one\n- two\nTAKEAWAY: Do it."
+    assert render_summary_html(text) == (
+        "<b>TL;DR:</b> Short.\n\n<b>KEY POINTS:</b>\n• one\n• two\n\n<b>TAKEAWAY:</b> Do it."
+    )
+
+
+def test_render_strips_compact_summary_label():
+    assert render_summary_html("SUMMARY: Just one point.") == "Just one point."
+    assert render_summary_html("**SUMMARY:** Bolded label.") == "Bolded label."
+
+
+def test_render_escapes_html_in_content():
+    rendered = render_summary_html("SUMMARY: use <b>tags</b> & a < b")
+    assert rendered == "use &lt;b&gt;tags&lt;/b&gt; &amp; a &lt; b"
+
+
+def test_render_converts_markdown_bold_without_double_bolding_labels():
+    rendered = render_summary_html("**TL;DR:** The **key** idea.")
+    assert rendered == "<b>TL;DR:</b> The <b>key</b> idea."
+
+
+def test_render_leaves_lone_asterisks_alone():
+    assert render_summary_html("SUMMARY: 5 * 3 = 15") == "5 * 3 = 15"
 
 
 def test_format_full_item_basic():
@@ -12,11 +44,26 @@ def test_format_full_item_basic():
         "summary": "TL;DR: something.",
     }
     text = format_full_item(item)
-    assert text.startswith("#3 — My Title\n")
+    assert text.startswith("<b>#3 — My Title</b>\n")
     assert "Saved: 2026-09-06 · Source: web" in text
     assert "URL: https://example.com/a" in text
     assert "Merged from" not in text
-    assert text.endswith("TL;DR: something.")
+    assert text.endswith("<b>TL;DR:</b> something.")
+
+
+def test_format_full_item_escapes_title_and_url():
+    item = {
+        "id": 4,
+        "title": "Q&A <live>",
+        "source": "web",
+        "url": "https://example.com/?a=1&b=2",
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "merged_from": None,
+        "summary": "SUMMARY: ok",
+    }
+    text = format_full_item(item)
+    assert "Q&amp;A &lt;live&gt;" in text
+    assert "a=1&amp;b=2" in text
 
 
 def test_format_full_item_untitled_no_url():
@@ -30,7 +77,7 @@ def test_format_full_item_untitled_no_url():
         "summary": "TL;DR: something.",
     }
     text = format_full_item(item)
-    assert text.startswith("#1 — Untitled\n")
+    assert text.startswith("<b>#1 — Untitled</b>\n")
     assert "URL:" not in text
 
 
