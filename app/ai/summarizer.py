@@ -6,12 +6,13 @@ caller tell the user *why* (quota, bad key, Gemini overloaded) instead of a
 generic error. Retries and model fallback live in app/ai/gemini.py.
 """
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
 
 from app.ai.gemini import FAILED, GeminiError, generate_text
-from app.ai.prompts import build_ask_prompt, build_summary_prompt, build_merge_prompt
+from app.ai.prompts import build_ask_prompt, build_merge_prompt, build_organize_prompt, build_summary_prompt
 from app.ai.related import rank_by_shared_keywords
 
 logger = logging.getLogger(__name__)
@@ -21,39 +22,126 @@ _ASK_DETAIL_CHARS = 8000
 _ASK_SUMMARY_CHAR_BUDGET = 200_000
 _ASK_TIMEOUT_SECONDS = 60
 
-_RELATED_ID_RE = re.compile(r"RELATED_ID\s*:\s*\**\s*#?\s*(NONE|\d+)", re.IGNORECASE)
+_TAG_LINE_RE = re.compile(
+    r"^[\s*_#>-]*(RELATED_ID|TITLE|CATEGORY)[\s*_]*:[\s*_]*(.*?)[\s*_]*$", re.IGNORECASE
+)
+_RELATED_ID_VALUE_RE = re.compile(r"#?\s*(\d+)")
+_MAX_TITLE_CHARS = 80
+_MAX_CATEGORY_CHARS = 30
+_ORGANIZE_BATCH_SIZE = 40
 
 
 @dataclass
 class Summary:
     text: str
     related_id: int | None = None
+    title: str | None = None
+    category: str | None = None
 
 
-def _extract_related_id(text: str) -> tuple[str, int | None]:
-    """Pull the RELATED_ID line out of a raw model response, returning the
-    cleaned display text and the id it flagged (or None)."""
-    match = _RELATED_ID_RE.search(text)
-    if not match:
-        return text.strip(), None
+def _extract_tags(text: str) -> tuple[str, dict[str, str]]:
+    """Split a raw model response into display text and the tag lines
+    (RELATED_ID / TITLE / CATEGORY) at its end. Only the trailing block is
+    read, so a summary bullet like "- Title: The Godfather" stays content.
+    The first occurrence of each tag wins."""
+    lines = text.splitlines()
+    tags: dict[str, str] = {}
+    cut = len(lines)
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index]
+        if not line.strip() or set(line.strip()) <= set("-*_="):
+            cut = index
+            continue
+        match = _TAG_LINE_RE.match(line)
+        if not match:
+            break
+        tags[match.group(1).upper()] = match.group(2).strip()  # walking backwards: earliest wins
+        cut = index
+    return "\n".join(lines[:cut]).strip(), tags
 
-    related_id = None if match.group(1).upper() == "NONE" else int(match.group(1))
-    cleaned = "\n".join(
-        line for line in text.splitlines() if not _RELATED_ID_RE.search(line)
-    ).strip()
-    return cleaned, related_id
+
+def _parse_related_id(value: str | None) -> int | None:
+    match = _RELATED_ID_VALUE_RE.match(value or "")
+    return int(match.group(1)) if match else None
 
 
-async def summarize(content: dict, recent_items: list[dict] | None, api_key: str) -> Summary:
-    prompt = build_summary_prompt(content, recent_items)
+def clean_title(value: str | None) -> str | None:
+    title = " ".join((value or "").split()).strip("\"'“”‘’<>[]")
+    return title[:_MAX_TITLE_CHARS].strip() or None
+
+
+def clean_category(value: str | None, existing: list[str]) -> str | None:
+    """Normalizes a category name, reusing an existing category's exact
+    spelling when it matches case-insensitively."""
+    name = " ".join((value or "").split()).strip("\"'“”‘’<>[].")
+    name = name[:_MAX_CATEGORY_CHARS].strip()
+    if not name:
+        return None
+    for existing_name in existing:
+        if existing_name.casefold() == name.casefold():
+            return existing_name
+    return name[0].upper() + name[1:]
+
+
+async def summarize(
+    content: dict,
+    recent_items: list[dict] | None,
+    api_key: str,
+    existing_categories: list[str] | None = None,
+) -> Summary:
+    existing_categories = existing_categories or []
+    prompt = build_summary_prompt(content, recent_items, existing_categories)
     text = await asyncio.to_thread(generate_text, api_key, prompt)
 
-    clean_text, related_id = _extract_related_id(text)
+    clean_text, tags = _extract_tags(text)
     if not clean_text:
-        logger.warning("Gemini summary was empty after stripping RELATED_ID line")
+        logger.warning("Gemini summary was empty after stripping tag lines")
         raise GeminiError(FAILED)
 
-    return Summary(text=clean_text, related_id=related_id)
+    return Summary(
+        text=clean_text,
+        related_id=_parse_related_id(tags.get("RELATED_ID")),
+        title=clean_title(tags.get("TITLE")),
+        category=clean_category(tags.get("CATEGORY"), existing_categories),
+    )
+
+
+def _parse_json_array(text: str) -> list:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1:
+        raise ValueError("no JSON array in response")
+    return json.loads(text[start : end + 1])
+
+
+async def organize_items(
+    items: list[dict], existing_categories: list[str], api_key: str
+) -> dict[int, tuple[str | None, str | None]]:
+    """Titles and categories for already-saved items, in batches.
+    Returns {id: (title, category)}; items Gemini skipped are left out."""
+    categories = list(existing_categories)
+    results: dict[int, tuple[str | None, str | None]] = {}
+    for start in range(0, len(items), _ORGANIZE_BATCH_SIZE):
+        batch = items[start : start + _ORGANIZE_BATCH_SIZE]
+        text = await asyncio.to_thread(generate_text, api_key, build_organize_prompt(batch, categories))
+        try:
+            rows = _parse_json_array(text)
+        except (ValueError, json.JSONDecodeError):
+            logger.error("Couldn't parse organize response: %s", text[:500])
+            raise GeminiError(FAILED)
+
+        valid_ids = {item["id"] for item in batch}
+        for row in rows:
+            if not isinstance(row, dict) or row.get("id") not in valid_ids:
+                continue
+            category = clean_category(row.get("category"), categories)
+            if category and category not in categories:
+                categories.append(category)
+            results[row["id"]] = (clean_title(row.get("title")), category)
+    return results
 
 
 def select_ask_context(question: str, items: list[dict]) -> tuple[list[dict], list[dict]]:

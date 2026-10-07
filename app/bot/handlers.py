@@ -43,6 +43,7 @@ from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
     save_summary,
+    get_categories,
     get_recent,
     get_by_id,
     update_merged_summary,
@@ -54,6 +55,7 @@ from app.bot.formatting import (
     SUMMARY_FAILED_TEXT,
     build_merge_keyboard,
     format_full_item,
+    format_saved_summary,
     gemini_error_text,
     render_summary_html,
 )
@@ -171,21 +173,29 @@ async def _summarize_and_save(message: Message, user_id: int, api_key: str, cont
     all_items = await asyncio.to_thread(get_recent, user_id, None)
     recent_items = pick_candidates(content["text"], all_items, recent_limit=_RECENT_HISTORY_LIMIT)
 
+    categories = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
+
     await message.chat.send_action(ChatAction.TYPING)
     try:
-        summary = await summarize(content, recent_items, api_key)
+        summary = await summarize(content, recent_items, api_key, categories)
     except GeminiError as exc:
         await message.reply_text(gemini_error_text(exc))
         return
 
+    # Web articles keep their real headline; everything else gets the generated title.
+    if not (content["source"] == "web" and content.get("title")):
+        content = {**content, "title": summary.title or content.get("title")}
+
     try:
-        new_id = await asyncio.to_thread(save_summary, content, summary.text, user_id)
+        new_id = await asyncio.to_thread(save_summary, content, summary.text, user_id, summary.category)
     except Exception:
         logger.exception("Failed to save summary to database")
         new_id = None
 
-    footer = f"\n\n<i>Saved as #{new_id}</i>" if new_id else "\n\n<i>⚠️ Couldn't save this one.</i>"
-    await message.reply_text(render_summary_html(summary.text) + footer, parse_mode=ParseMode.HTML)
+    await message.reply_text(
+        format_saved_summary(new_id, content.get("title"), summary.category, summary.text),
+        parse_mode=ParseMode.HTML,
+    )
     if new_id is None:
         return
 

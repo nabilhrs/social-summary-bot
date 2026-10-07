@@ -1,6 +1,13 @@
 from app.ai import summarizer
 from app.ai.prompts import build_ask_prompt
-from app.ai.summarizer import _extract_related_id, select_ask_context
+from app.ai.summarizer import (
+    _extract_tags,
+    _parse_json_array,
+    _parse_related_id,
+    clean_category,
+    clean_title,
+    select_ask_context,
+)
 
 
 def _note(item_id, summary, original_text="", title=None):
@@ -59,37 +66,74 @@ def test_build_ask_prompt_without_detailed_items():
     assert "Full text of the notes most likely to be relevant:\n(none)" in prompt
 
 
-def test_extract_related_id_none():
-    text = "TL;DR: something.\nKEY POINTS:\n- a\nTAKEAWAY: b\nRELATED_ID: NONE"
-    cleaned, related_id = _extract_related_id(text)
-    assert related_id is None
-    assert "RELATED_ID" not in cleaned
-    assert "TAKEAWAY: b" in cleaned
+FULL_RESPONSE = (
+    "TL;DR: something.\nKEY POINTS:\n- a\nTAKEAWAY: b\n"
+    "RELATED_ID: 7\nTITLE: STAR Method Interview Tips\nCATEGORY: Career"
+)
 
 
-def test_extract_related_id_with_match():
-    text = "TL;DR: something.\nKEY POINTS:\n- a\nTAKEAWAY: b\nRELATED_ID: 7"
-    cleaned, related_id = _extract_related_id(text)
-    assert related_id == 7
-    assert "RELATED_ID" not in cleaned
+def test_extract_tags_splits_display_text_and_tags():
+    cleaned, tags = _extract_tags(FULL_RESPONSE)
+    assert cleaned == "TL;DR: something.\nKEY POINTS:\n- a\nTAKEAWAY: b"
+    assert tags == {"RELATED_ID": "7", "TITLE": "STAR Method Interview Tips", "CATEGORY": "Career"}
 
 
-def test_extract_related_id_case_insensitive_and_markdown():
-    text = "TL;DR: something.\n**related_id:** 12"
-    cleaned, related_id = _extract_related_id(text)
-    assert related_id == 12
-    assert "related_id" not in cleaned.lower()
+def test_extract_tags_tolerates_markdown_and_case():
+    cleaned, tags = _extract_tags("SUMMARY: hi\n**related_id:** #12\n**Title:** *My Note*\n- Category: Food")
+    assert cleaned == "SUMMARY: hi"
+    assert tags == {"RELATED_ID": "#12", "TITLE": "My Note", "CATEGORY": "Food"}
 
 
-def test_extract_related_id_with_hash_prefix():
-    text = "TL;DR: something.\nRELATED_ID: #1"
-    cleaned, related_id = _extract_related_id(text)
-    assert related_id == 1
-    assert "RELATED_ID" not in cleaned
-
-
-def test_extract_related_id_missing_line():
+def test_extract_tags_without_tags_returns_text_unchanged():
     text = "TL;DR: something.\nKEY POINTS:\n- a\nTAKEAWAY: b"
-    cleaned, related_id = _extract_related_id(text)
-    assert related_id is None
-    assert cleaned == text
+    assert _extract_tags(text) == (text, {})
+
+
+def test_extract_tags_first_occurrence_wins():
+    _, tags = _extract_tags("x\nTITLE: First\nTITLE: Second")
+    assert tags["TITLE"] == "First"
+
+
+def test_extract_tags_leaves_tag_like_lines_inside_content():
+    text = "KEY POINTS:\n- Title: The Godfather\n- Category: drama\nTAKEAWAY: watch it\n\nRELATED_ID: NONE\nTITLE: Film Notes"
+    cleaned, tags = _extract_tags(text)
+    assert "- Title: The Godfather" in cleaned
+    assert "- Category: drama" in cleaned
+    assert tags == {"RELATED_ID": "NONE", "TITLE": "Film Notes"}
+
+
+def test_extract_tags_skips_separator_lines_in_trailing_block():
+    cleaned, tags = _extract_tags("SUMMARY: hi\n---\nRELATED_ID: 3\n\nCATEGORY: Food")
+    assert cleaned == "SUMMARY: hi"
+    assert tags == {"RELATED_ID": "3", "CATEGORY": "Food"}
+
+
+def test_parse_related_id():
+    assert _parse_related_id("7") == 7
+    assert _parse_related_id("#1") == 1
+    assert _parse_related_id("NONE") is None
+    assert _parse_related_id(None) is None
+
+
+def test_clean_title_strips_quotes_and_whitespace_and_caps_length():
+    assert clean_title('  "Interview   Tips"  ') == "Interview Tips"
+    assert clean_title("") is None
+    assert clean_title(None) is None
+    assert len(clean_title("word " * 40)) <= 80
+
+
+def test_clean_category_reuses_existing_spelling():
+    assert clean_category("career", ["Career", "Food"]) == "Career"
+    assert clean_category("FOOD & DRINK", ["Food & Drink"]) == "Food & Drink"
+
+
+def test_clean_category_new_name_is_capitalized_and_trimmed():
+    assert clean_category(" personal finance. ", []) == "Personal finance"
+    assert clean_category("<Travel>", []) == "Travel"
+    assert clean_category("   ", []) is None
+    assert len(clean_category("x" * 100, [])) == 30
+
+
+def test_parse_json_array_handles_code_fences_and_preamble():
+    assert _parse_json_array('```json\n[{"id": 1}]\n```') == [{"id": 1}]
+    assert _parse_json_array('Here you go: [{"id": 2}] done') == [{"id": 2}]

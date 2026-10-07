@@ -12,10 +12,12 @@ from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
-from app.ai.summarizer import answer_question
+from app.ai.summarizer import answer_question, clean_category, clean_title
 from app.config import config
 from app.database.database import (
     get_all_items,
+    get_categories,
+    update_fields,
     list_items,
     search_items,
     get_by_id,
@@ -258,6 +260,58 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if len(rendered) > _MAX_REPLY_CHARS:
         rendered = render_summary_html(answer[:_MAX_REPLY_CHARS].rsplit("\n", 1)[0] + "\n…")
     await update.message.reply_text(rendered, parse_mode=ParseMode.HTML)
+
+
+def _id_and_rest(args: list[str]) -> tuple[int, str] | None:
+    """Parses '<id> <free text...>' command arguments."""
+    if len(args) < 2:
+        return None
+    try:
+        return int(args[0].lstrip("#")), " ".join(args[1:]).strip()
+    except ValueError:
+        return None
+
+
+async def rename_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    parsed = _id_and_rest(context.args)
+    title = clean_title(parsed[1]) if parsed else None
+    if title is None:
+        await update.message.reply_text("Usage: /rename <id> <new title>")
+        return
+
+    item_id = parsed[0]
+    if not await asyncio.to_thread(update_fields, item_id, user_id, title=title):
+        await update.message.reply_text(f"No saved item found with id #{item_id}.")
+        return
+    await update.message.reply_text(f"✏️ Renamed #{item_id} to: {title}")
+
+
+async def move_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    parsed = _id_and_rest(context.args)
+    existing = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
+    category = clean_category(parsed[1], existing) if parsed else None
+    if category is None:
+        await update.message.reply_text("Usage: /move <id> <category>")
+        return
+
+    item_id = parsed[0]
+    if not await asyncio.to_thread(update_fields, item_id, user_id, category=category):
+        await update.message.reply_text(f"No saved item found with id #{item_id}.")
+        return
+    is_new = category not in existing
+    await update.message.reply_text(
+        f"📂 Moved #{item_id} to {category}" + (" (new category)." if is_new else ".")
+    )
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

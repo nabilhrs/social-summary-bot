@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS summaries (
     summary TEXT NOT NULL,
     created_at TEXT NOT NULL,
     merged_from TEXT,
-    previous_summary TEXT
+    previous_summary TEXT,
+    category TEXT,
+    user_note TEXT
 );
 """
 
@@ -53,8 +55,9 @@ def init_db() -> None:
         conn.execute(_USER_SETTINGS_SCHEMA)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
-        if not _column_exists(conn, "summaries", "previous_summary"):
-            conn.execute("ALTER TABLE summaries ADD COLUMN previous_summary TEXT")
+        for column in ("previous_summary", "category", "user_note"):
+            if not _column_exists(conn, "summaries", column):
+                conn.execute(f"ALTER TABLE summaries ADD COLUMN {column} TEXT")
         if not _column_exists(conn, "summaries", "user_id"):
             conn.execute("ALTER TABLE summaries ADD COLUMN user_id INTEGER")
             # Pre-existing rows predate multi-user support and belong to
@@ -67,13 +70,14 @@ def init_db() -> None:
                 )
 
 
-def save_summary(content: dict, summary_text: str, user_id: int) -> int:
+def save_summary(content: dict, summary_text: str, user_id: int, category: str | None = None) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(config.db_path) as conn:
         cursor = conn.execute(
             """
-            INSERT INTO summaries (user_id, url, source, title, author, original_text, summary, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries
+                (user_id, url, source, title, author, original_text, summary, created_at, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -84,9 +88,74 @@ def save_summary(content: dict, summary_text: str, user_id: int) -> int:
                 content["text"],
                 summary_text,
                 now,
+                category,
             ),
         )
         return cursor.lastrowid
+
+
+def get_categories(user_id: int) -> list[tuple[str, int]]:
+    """(category, item count), most-used first. Uncategorized items are excluded."""
+    with sqlite3.connect(config.db_path) as conn:
+        return conn.execute(
+            "SELECT category, COUNT(*) FROM summaries WHERE user_id = ? AND category IS NOT NULL "
+            "GROUP BY category ORDER BY COUNT(*) DESC, category",
+            (user_id,),
+        ).fetchall()
+
+
+def count_items(user_id: int, category: str | None = None, uncategorized: bool = False) -> int:
+    condition, params = _category_filter(user_id, category, uncategorized)
+    with sqlite3.connect(config.db_path) as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM summaries WHERE {condition}", params).fetchone()[0]
+
+
+def list_page(
+    user_id: int, offset: int, limit: int, category: str | None = None, uncategorized: bool = False
+) -> list[dict]:
+    """Newest first. category=None and uncategorized=False lists everything."""
+    condition, params = _category_filter(user_id, category, uncategorized)
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT id, title, original_text, created_at, category FROM summaries "
+            f"WHERE {condition} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + (limit, offset),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _category_filter(user_id: int, category: str | None, uncategorized: bool) -> tuple[str, tuple]:
+    if uncategorized:
+        return "user_id = ? AND category IS NULL", (user_id,)
+    if category is not None:
+        return "user_id = ? AND category = ?", (user_id, category)
+    return "user_id = ?", (user_id,)
+
+
+def update_fields(row_id: int, user_id: int, **fields) -> bool:
+    """Update title / category / user_note on one of the user's items."""
+    allowed = {"title", "category", "user_note"}
+    if not fields or not set(fields) <= allowed:
+        raise ValueError(f"Can only update {sorted(allowed)}")
+    assignments = ", ".join(f"{name} = ?" for name in fields)
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            f"UPDATE summaries SET {assignments} WHERE id = ? AND user_id = ?",
+            (*fields.values(), row_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+
+def get_items_missing_category(user_id: int) -> list[dict]:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, title, summary, source FROM summaries "
+            "WHERE user_id = ? AND category IS NULL ORDER BY id",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def get_recent(user_id: int, limit: int | None = 10) -> list[dict]:

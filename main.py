@@ -16,6 +16,7 @@ from telegram.ext import (
     filters,
 )
 
+from app.bot.background import backfill_loop
 from app.config import config
 from app.bot.commands import (
     start,
@@ -28,6 +29,8 @@ from app.bot.commands import (
     delete_command,
     undo_command,
     export_command,
+    rename_command,
+    move_command,
     setkey_command,
     handle_quick_action_callback,
     handle_delete_request_callback,
@@ -55,6 +58,8 @@ _BOT_COMMANDS = [
     BotCommand("delete", "Delete a saved item"),
     BotCommand("undo", "Revert a merged item to its pre-merge summary"),
     BotCommand("export", "Download all your notes as files"),
+    BotCommand("rename", "Rename a saved item"),
+    BotCommand("move", "Move a saved item to another category"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -73,6 +78,7 @@ async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _post_init(app: Application) -> None:
     await app.bot.set_my_commands(_BOT_COMMANDS)
+    app.create_task(backfill_loop())
 
 
 def build_app() -> Application:
@@ -88,6 +94,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("undo", undo_command))
     app.add_handler(CommandHandler("export", export_command))
+    app.add_handler(CommandHandler("rename", rename_command))
+    app.add_handler(CommandHandler("move", move_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(

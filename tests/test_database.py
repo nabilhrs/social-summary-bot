@@ -450,3 +450,79 @@ def test_resolve_gemini_api_key_non_owner_with_personal_key(db_path, monkeypatch
     database.set_user_api_key(OTHER_USER, "other-users-own-key")
 
     assert database.resolve_gemini_api_key(OTHER_USER) == "other-users-own-key"
+
+
+def test_save_summary_stores_category(db_path):
+    row_id = database.save_summary(_make_content("T", "x"), "TL;DR: x", USER, category="Career")
+    assert database.get_by_id(row_id, USER)["category"] == "Career"
+
+
+def test_get_categories_counts_most_used_first_and_skips_uncategorized(db_path):
+    for category in ["Food", "Career", "Career", None]:
+        database.save_summary(_make_content("T", "x"), "TL;DR: x", USER, category=category)
+    database.save_summary(_make_content("T", "x"), "TL;DR: x", OTHER_USER, category="Travel")
+
+    assert database.get_categories(USER) == [("Career", 2), ("Food", 1)]
+
+
+def test_list_page_and_count_filter_by_category(db_path):
+    ids = [
+        database.save_summary(_make_content(f"T{i}", "x"), "TL;DR: x", USER, category=category)
+        for i, category in enumerate(["Food", "Career", "Food", None, "Food"])
+    ]
+
+    assert database.count_items(USER) == 5
+    assert database.count_items(USER, category="Food") == 3
+    assert database.count_items(USER, uncategorized=True) == 1
+
+    food_page = database.list_page(USER, offset=0, limit=2, category="Food")
+    assert [item["id"] for item in food_page] == [ids[4], ids[2]]
+    assert [item["id"] for item in database.list_page(USER, offset=2, limit=2, category="Food")] == [ids[0]]
+    assert [item["id"] for item in database.list_page(USER, 0, 10, uncategorized=True)] == [ids[3]]
+
+
+def test_update_fields_changes_only_own_items(db_path):
+    mine = database.save_summary(_make_content("Old", "x"), "TL;DR: x", USER)
+    theirs = database.save_summary(_make_content("Theirs", "x"), "TL;DR: x", OTHER_USER)
+
+    assert database.update_fields(mine, USER, title="New", category="Tech") is True
+    assert database.update_fields(theirs, USER, title="Hijacked") is False
+
+    row = database.get_by_id(mine, USER)
+    assert (row["title"], row["category"]) == ("New", "Tech")
+    assert database.get_by_id(theirs, OTHER_USER)["title"] == "Theirs"
+
+
+def test_update_fields_rejects_other_columns(db_path):
+    row_id = database.save_summary(_make_content("T", "x"), "TL;DR: x", USER)
+    with pytest.raises(ValueError):
+        database.update_fields(row_id, USER, summary="overwrite")
+
+
+def test_get_items_missing_category(db_path):
+    database.save_summary(_make_content("Done", "x"), "TL;DR: x", USER, category="Food")
+    missing = database.save_summary(_make_content(None, "x"), "TL;DR: y", USER)
+
+    assert [item["id"] for item in database.get_items_missing_category(USER)] == [missing]
+
+
+def test_init_db_adds_category_and_user_note_columns_to_old_table(tmp_path, monkeypatch):
+    path = str(tmp_path / "old.db")
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, url TEXT, "
+            "source TEXT NOT NULL, title TEXT, author TEXT, original_text TEXT NOT NULL, "
+            "summary TEXT NOT NULL, created_at TEXT NOT NULL, merged_from TEXT, previous_summary TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO summaries (user_id, source, original_text, summary, created_at) "
+            "VALUES (1, 'pasted_text', 'x', 'y', '2026-01-01')"
+        )
+    monkeypatch.setattr(database.config, "db_path", path)
+
+    database.init_db()
+
+    with sqlite3.connect(path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(summaries)")}
+        assert conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0] == 1
+    assert {"category", "user_note"} <= columns

@@ -16,6 +16,30 @@ _RELATED_ID_INSTRUCTION = (
     "not) — or NONE if none share a subject with the new content>"
 )
 
+_TITLE_INSTRUCTION = (
+    "TITLE: <a short, specific title for the new content, 3-8 words, in the "
+    "same language as the content, no quotes>"
+)
+
+_CATEGORY_RULES = (
+    "Reuse one of the existing categories whenever it reasonably fits — only "
+    "create a new one if none do. A new category must be a broad, reusable "
+    "topic of 1-3 words in English Title Case (e.g. Career, Food & Drink, "
+    "Tech, Personal Finance, Health), never something specific to one item."
+)
+
+
+def _format_categories(existing_categories: list[str]) -> str:
+    return ", ".join(existing_categories) if existing_categories else "(none yet)"
+
+
+def _category_instruction(existing_categories: list[str]) -> str:
+    return (
+        f"CATEGORY: <one broad category for the new content. Existing "
+        f"categories: {_format_categories(existing_categories)}. {_CATEGORY_RULES}>"
+    )
+
+
 _FULL_STRUCTURE = (
     "TL;DR: <1-2 sentence summary>\n"
     "KEY POINTS:\n"
@@ -47,7 +71,9 @@ def _format_recent_items(recent_items: list[dict]) -> str:
     )
 
 
-def build_summary_prompt(content: dict, recent_items: list[dict] | None = None) -> str:
+def build_summary_prompt(
+    content: dict, recent_items: list[dict] | None = None, existing_categories: list[str] | None = None
+) -> str:
     header_lines = [f"Title: {content.get('title') or 'Untitled'}"]
     if content.get("author"):
         header_lines.append(f"Author: {content['author']}")
@@ -66,12 +92,34 @@ def build_summary_prompt(content: dict, recent_items: list[dict] | None = None) 
         f"{intro} Reply with exactly this structure and nothing else — no "
         f"preamble, no extra commentary:\n\n"
         f"{structure}\n"
-        f"{_RELATED_ID_INSTRUCTION}\n\n"
+        f"{_RELATED_ID_INSTRUCTION}\n"
+        f"{_TITLE_INSTRUCTION}\n"
+        f"{_category_instruction(existing_categories or [])}\n\n"
         f"{chr(10).join(header_lines)}\n\n"
         "New content:\n"
         f"{content['text']}\n\n"
         "Previously saved items:\n"
         f"{_format_recent_items(recent_items or [])}"
+    )
+
+
+def build_organize_prompt(items: list[dict], existing_categories: list[str]) -> str:
+    """One-time backfill: a title and category for each already-saved item.
+    Items that already have a title keep it."""
+    listing = "\n\n".join(
+        f"id {item['id']}" + (f" (keep title: {item['title']})" if item.get("title") else "")
+        + f"\n{item['summary']}"
+        for item in items
+    )
+    return (
+        "For each saved item below, give a short specific title (3-8 words, same "
+        "language as the item, no quotes) and one broad category. Existing "
+        f"categories: {_format_categories(existing_categories)}. {_CATEGORY_RULES} "
+        "Items in this batch should share categories where they fit together. "
+        "Where an item says 'keep title', return that title unchanged.\n\n"
+        "Reply with only a JSON array, no other text, like:\n"
+        '[{"id": 1, "title": "...", "category": "..."}]\n\n'
+        f"Items:\n{listing}"
     )
 
 

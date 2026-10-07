@@ -101,11 +101,32 @@ def build_list_delete_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _escape(value) -> str:
+    return html.escape(str(value), quote=False)
+
+
+def format_saved_summary(item_id: int | None, title: str | None, category: str | None, summary: str) -> str:
+    """Telegram HTML for the reply right after something is saved."""
+    lines = []
+    if title:
+        lines.append(f"<b>{_escape(title)}</b>")
+    if category:
+        lines.append(f"📂 {_escape(category)}")
+    if lines:
+        lines.append("")
+    lines.append(render_summary_html(summary))
+    lines.append("")
+    lines.append(f"<i>Saved as #{item_id}</i>" if item_id else "<i>⚠️ Couldn't save this one.</i>")
+    return "\n".join(lines)
+
+
 def format_full_item(item: dict) -> str:
     """Telegram HTML — send with parse_mode=HTML."""
-    escape = lambda value: html.escape(str(value), quote=False)  # noqa: E731
+    escape = _escape
     lines = [f"<b>#{item['id']} — {escape(item['title'] or 'Untitled')}</b>"]
     lines.append(f"Saved: {item['created_at'][:10]} · Source: {escape(item['source'])}")
+    if item.get("category"):
+        lines.append(f"📂 {escape(item['category'])}")
     if item.get("url"):
         lines.append(f"URL: {escape(item['url'])}")
     if item.get("merged_from"):
