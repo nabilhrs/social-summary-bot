@@ -29,19 +29,29 @@ def _keywords(text: str) -> set[str]:
     return {word for word in _WORD_RE.findall(text.lower()) if word not in _STOPWORDS}
 
 
+def _title_and_summary(item: dict) -> str:
+    return f"{item.get('title') or ''} {item['summary']}"
+
+
+def rank_by_shared_keywords(
+    text: str, items: list[dict], min_shared: int = 1, item_text=_title_and_summary
+) -> list[dict]:
+    """Items sharing at least `min_shared` keywords with `text`, most shared
+    first. Ties keep the input order."""
+    text_keywords = _keywords(text)
+    scored = []
+    for item in items:
+        shared = len(text_keywords & _keywords(item_text(item)))
+        if shared >= min_shared:
+            scored.append((shared, item))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in scored]
+
+
 def pick_candidates(
     new_text: str, items: list[dict], recent_limit: int = 10, keyword_limit: int = 10
 ) -> list[dict]:
     """`items` must be newest-first, each with `title` and `summary`."""
     recent, older = items[:recent_limit], items[recent_limit:]
-    new_keywords = _keywords(new_text)
-
-    scored = []
-    for item in older:
-        shared = len(new_keywords & _keywords(f"{item.get('title') or ''} {item['summary']}"))
-        if shared >= _MIN_SHARED_KEYWORDS:
-            scored.append((shared, item))
-    # sort() is stable, so ties keep the newer item first.
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-
-    return recent + [item for _, item in scored[:keyword_limit]]
+    matches = rank_by_shared_keywords(new_text, older, min_shared=_MIN_SHARED_KEYWORDS)
+    return recent + matches[:keyword_limit]

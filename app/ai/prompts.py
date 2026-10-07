@@ -75,6 +75,31 @@ def build_summary_prompt(content: dict, recent_items: list[dict] | None = None) 
     )
 
 
+def build_ask_prompt(question: str, items: list[dict], detailed_items: list[dict]) -> str:
+    """`items` get their summaries included; `detailed_items` (the best
+    keyword matches) also get their full original text, already truncated."""
+    summaries = "\n\n".join(
+        f"#{item['id']} ({item['created_at'][:10]}) — {item.get('title') or 'Untitled'}\n{item['summary']}"
+        for item in items
+    )
+    details = "\n\n".join(
+        f"--- Full text of #{item['id']} ---\n{item['original_text']}" for item in detailed_items
+    )
+    return (
+        "You are answering a question using only the user's own saved notes "
+        "below. Rules:\n"
+        "- Use only information in the notes. If they don't contain the answer, "
+        "say so plainly — never fill gaps with outside knowledge.\n"
+        "- Cite the note ids you used inline, like (#12).\n"
+        "- Answer in the same language as the question.\n"
+        "- Be concise. Use a short bullet list (\"- \") only if listing several things.\n"
+        "- Plain text only: no headings and no Markdown except **bold** for emphasis.\n\n"
+        f"Question: {question}\n\n"
+        f"Saved note summaries (newest first):\n{summaries}\n\n"
+        f"Full text of the notes most likely to be relevant:\n{details or '(none)'}"
+    )
+
+
 def build_merge_prompt(
     old_text: str, new_text: str, old_title: str | None, new_title: str | None
 ) -> str:

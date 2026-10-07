@@ -22,6 +22,7 @@ from app.bot.commands import (
     help_command,
     list_command,
     search_command,
+    ask_command,
     view_command,
     merge_command,
     delete_command,
@@ -41,6 +42,7 @@ _BOT_COMMANDS = [
     BotCommand("help", "Show what I can do"),
     BotCommand("list", "Show your last saved items"),
     BotCommand("search", "Search your saved items"),
+    BotCommand("ask", "Ask a question about your saved notes"),
     BotCommand("view", "Show the full summary for a saved item"),
     BotCommand("merge", "Merge two saved items into one"),
     BotCommand("delete", "Delete a saved item"),
@@ -72,6 +74,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("search", search_command))
+    app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("view", view_command))
     app.add_handler(CommandHandler("merge", merge_command))
     app.add_handler(CommandHandler("delete", delete_command))

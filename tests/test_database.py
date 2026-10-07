@@ -89,6 +89,18 @@ def test_get_recent_respects_limit(db_path):
     assert len(database.get_recent(USER, limit=2)) == 2
 
 
+def test_get_all_items_returns_full_rows_newest_first_for_one_user(db_path):
+    first = database.save_summary(_make_content("First", "body one"), "TL;DR: one", USER)
+    second = database.save_summary(_make_content("Second", "body two"), "TL;DR: two", USER)
+    database.save_summary(_make_content("Theirs", "x"), "TL;DR: x", OTHER_USER)
+
+    items = database.get_all_items(USER)
+
+    assert [item["id"] for item in items] == [second, first]
+    assert items[0]["original_text"] == "body two"
+    assert items[0]["created_at"]
+
+
 def test_get_recent_none_limit_returns_everything(db_path):
     for i in range(15):
         database.save_summary(_make_content(f"Item {i}", "x"), "TL;DR: x", USER)

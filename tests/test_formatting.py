@@ -31,6 +31,16 @@ def test_render_converts_markdown_bold_without_double_bolding_labels():
 
 def test_render_leaves_lone_asterisks_alone():
     assert render_summary_html("SUMMARY: 5 * 3 = 15") == "5 * 3 = 15"
+    assert render_summary_html("SUMMARY: a*b and c*d") == "a*b and c*d"
+
+
+def test_render_converts_single_asterisk_italics():
+    rendered = render_summary_html("- Read the *job description* and **prepare**")
+    assert rendered == "• Read the <i>job description</i> and <b>prepare</b>"
+
+
+def test_render_star_bullets_are_not_italicized():
+    assert render_summary_html("* one\n* two") == "• one\n• two"
 
 
 def test_format_full_item_basic():

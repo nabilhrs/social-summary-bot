@@ -26,7 +26,7 @@ from app.extractors.base import (
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
-from app.ai.gemini import INVALID_KEY, QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError
+from app.ai.gemini import GeminiError
 from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
 from app.database.database import (
@@ -37,7 +37,14 @@ from app.database.database import (
     delete_item,
     resolve_gemini_api_key,
 )
-from app.bot.formatting import format_full_item, build_merge_keyboard, render_summary_html
+from app.bot.formatting import (
+    NO_API_KEY_TEXT,
+    SUMMARY_FAILED_TEXT,
+    build_merge_keyboard,
+    format_full_item,
+    gemini_error_text,
+    render_summary_html,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,26 +58,6 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "{platform} doesn't allow me to pull post content automatically. "
     "Please paste the text here and I'll summarize it."
 )
-SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
-GEMINI_ERROR_TEXTS = {
-    QUOTA_DAILY: (
-        "Your Gemini API key has used up today's free quota on every model I can "
-        "fall back to. It resets at midnight Pacific time — send this again after that."
-    ),
-    QUOTA_RATE: "Gemini's per-minute rate limit was hit. Wait a minute and send this again.",
-    INVALID_KEY: (
-        "Gemini rejected the API key. Update GEMINI_API_KEY in the server's .env "
-        "(then restart the bot), or send /setkey <new-key>."
-    ),
-    UNAVAILABLE: (
-        "Gemini is overloaded or unreachable right now — I retried and tried backup "
-        "models too. Try again in a few minutes."
-    ),
-}
-NO_API_KEY_TEXT = (
-    "You need your own Gemini API key before I can generate summaries for you. "
-    "Get a free one at https://aistudio.google.com/apikey, then send /setkey <your-key>."
-)
 TIKTOK_PROCESSING_TEXT = "🎥 Downloading and analyzing this TikTok video — this may take a moment..."
 THREADS_LIMITATION_NOTE = (
     "ℹ️ Threads posts can be part of a longer thread (including Threads' own "
@@ -82,10 +69,6 @@ THREADS_LIMITATION_NOTE = (
 # PRD 5.5 — recent saved items always checked against new content; older
 # keyword-matched items are added on top (see app/ai/related.py).
 _RECENT_HISTORY_LIMIT = 10
-
-
-def _gemini_error_text(exc: GeminiError) -> str:
-    return GEMINI_ERROR_TEXTS.get(exc.kind, SUMMARY_FAILED_TEXT)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -125,7 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 extracted = await fetch_tiktok_video(raw_text, api_key)
             except GeminiError as exc:
-                await message.reply_text(_gemini_error_text(exc))
+                await message.reply_text(gemini_error_text(exc))
                 return
             if extracted is None:
                 await message.reply_text(EXTRACTION_FAILED_TEXT)
@@ -153,7 +136,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         summary = await summarize(content, recent_items, api_key)
     except GeminiError as exc:
-        await message.reply_text(_gemini_error_text(exc))
+        await message.reply_text(gemini_error_text(exc))
         return
 
     await message.reply_text(render_summary_html(summary.text), parse_mode=ParseMode.HTML)
@@ -228,7 +211,7 @@ async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
     except GeminiError as exc:
         # Sent as a new message so the merge buttons stay usable for a retry.
-        await query.message.reply_text(_gemini_error_text(exc))
+        await query.message.reply_text(gemini_error_text(exc))
         return
 
     try:

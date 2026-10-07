@@ -7,19 +7,30 @@ app/bot/handlers.py covers both URL and pasted text without a command.
 import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
+from app.ai.summarizer import answer_question
 from app.config import config
 from app.database.database import (
+    get_all_items,
     list_items,
     search_items,
     get_by_id,
     undo_merge,
     set_user_api_key,
+    resolve_gemini_api_key,
 )
-from app.bot.formatting import format_full_item, build_merge_keyboard, build_delete_keyboard, build_list_delete_keyboard
+from app.bot.formatting import (
+    NO_API_KEY_TEXT,
+    build_delete_keyboard,
+    build_list_delete_keyboard,
+    build_merge_keyboard,
+    format_full_item,
+    gemini_error_text,
+    render_summary_html,
+)
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
@@ -46,6 +57,7 @@ HELP_TEXT = (
     "`/help` — show this message\n"
     "`/list [n]` — show your last n saved items (default 10, max 50)\n"
     "`/search <keyword>` — search your saved items\n"
+    "`/ask <question>` — ask a question; I answer from your saved notes and cite them\n"
     "`/view <id>` — show the full summary for a saved item\n"
     "`/merge <keep_id> <absorb_id>` — merge two saved items into one (asks for confirmation)\n"
     "`/delete <id>` — delete a saved item (asks for confirmation)\n"
@@ -206,6 +218,39 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     header = f"Found {total} match(es) for \"{keyword}\""
     header += ":" if total <= len(items) else f" (showing first {len(items)}):"
     await update.message.reply_text(_format_item_list(items, header), reply_markup=_delete_keyboard_for(items))
+
+
+async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /ask <question about your saved notes>")
+        return
+
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
+    if api_key is None:
+        await update.message.reply_text(NO_API_KEY_TEXT)
+        return
+
+    items = await asyncio.to_thread(get_all_items, user_id)
+    if not items:
+        await update.message.reply_text("You haven't saved anything yet.")
+        return
+
+    await update.effective_chat.send_action(ChatAction.TYPING)
+    try:
+        answer = await answer_question(" ".join(context.args), items, api_key)
+    except GeminiError as exc:
+        await update.message.reply_text(gemini_error_text(exc))
+        return
+
+    rendered = render_summary_html(answer)
+    if len(rendered) > _MAX_REPLY_CHARS:
+        rendered = render_summary_html(answer[:_MAX_REPLY_CHARS].rsplit("\n", 1)[0] + "\n…")
+    await update.message.reply_text(rendered, parse_mode=ParseMode.HTML)
 
 
 async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

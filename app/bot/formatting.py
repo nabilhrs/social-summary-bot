@@ -8,11 +8,39 @@ import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.ai.gemini import INVALID_KEY, QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError
+
+SUMMARY_FAILED_TEXT = "Something went wrong while generating the summary. Please try again."
+NO_API_KEY_TEXT = (
+    "You need your own Gemini API key before I can generate summaries for you. "
+    "Get a free one at https://aistudio.google.com/apikey, then send /setkey <your-key>."
+)
+_GEMINI_ERROR_TEXTS = {
+    QUOTA_DAILY: (
+        "Your Gemini API key has used up today's free quota on every model I can "
+        "fall back to. It resets at midnight Pacific time — send this again after that."
+    ),
+    QUOTA_RATE: "Gemini's per-minute rate limit was hit. Wait a minute and send this again.",
+    INVALID_KEY: (
+        "Gemini rejected the API key. Update GEMINI_API_KEY in the server's .env "
+        "(then restart the bot), or send /setkey <new-key>."
+    ),
+    UNAVAILABLE: (
+        "Gemini is overloaded or unreachable right now — I retried and tried backup "
+        "models too. Try again in a few minutes."
+    ),
+}
+
+
+def gemini_error_text(exc: GeminiError) -> str:
+    return _GEMINI_ERROR_TEXTS.get(exc.kind, SUMMARY_FAILED_TEXT)
+
 # Summaries are stored as plain text and rendered as Telegram HTML only at
 # send time. Everything is escaped first, so content can never break
 # Telegram's parser (see docs/memory.md #7).
 _SUMMARY_LABEL_RE = re.compile(r"^\s*\**SUMMARY\**\s*:\s*\**\s*", re.IGNORECASE)
 _MARKDOWN_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_MARKDOWN_ITALIC_RE = re.compile(r"(?<![*\w])\*(?![\s*])([^*\n]+?)(?<!\s)\*(?![*\w])")
 _SECTION_LABEL_RE = re.compile(r"^(TL;DR|KEY POINTS|TAKEAWAY)\s*:", re.MULTILINE)
 _SECTION_GAP_RE = re.compile(r"\n+(?=<b>(?:KEY POINTS|TAKEAWAY):</b>)")
 _BULLET_RE = re.compile(r"^[ \t]*[-*•][ \t]+", re.MULTILINE)
@@ -22,6 +50,7 @@ def render_summary_html(text: str) -> str:
     text = _SUMMARY_LABEL_RE.sub("", text.strip(), count=1)
     rendered = html.escape(text, quote=False)
     rendered = _MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", rendered)
+    rendered = _MARKDOWN_ITALIC_RE.sub(r"<i>\1</i>", rendered)
     rendered = _SECTION_LABEL_RE.sub(r"<b>\1:</b>", rendered)
     rendered = _SECTION_GAP_RE.sub("\n\n", rendered)
     return _BULLET_RE.sub("• ", rendered)
