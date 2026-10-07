@@ -379,3 +379,41 @@ onboarding, encrypting stored API keys) was deliberately skipped.
   voice note and a PDF
 - ⚠️ Telegram download step needs a check on the deployed bot
 - ❌ Albums (several photos sent together) are summarized one photo at a time
+
+### Titles and categories
+- ✅ The summarize call also returns `TITLE:` and `CATEGORY:` lines (no
+  extra Gemini call); tags are only read from the trailing block, so a
+  content bullet like "- Title: ..." stays content
+- ✅ Web articles keep their headline; everything else gets the generated title
+- ✅ Adaptive categories: Gemini sees existing ones and reuses them; names
+  matching case-insensitively reuse the existing spelling; capped at 40
+  bytes so they fit in Telegram button data
+- ✅ Background backfill (startup, retried every 6h) for items saved
+  earlier, batched into one Gemini call per 40 items
+- ✅ Verified live on a copy of the real notes: 10 notes → Career (9),
+  Food & Drink (1); a new Malay cooking tip reused Food & Drink; a finance
+  note created Personal Finance
+- ✅ `/rename`, `/move`
+
+### Browsing
+- ✅ `/list` opens a category menu with counts; pages of 10 with
+  Prev/Next, editing the same message; `/list <category>` jumps in
+- ✅ Stateless button data (`lm`, `lp:<page>:<scope>`)
+
+### Buttons under summaries
+- ✅ ✏️ Rename · 📂 Category · 📝 Note · 🗑 Delete, also on `/view`
+- ✅ Text input via ForceReply prompts that carry the item id — no
+  in-memory state
+
+### Notes
+- ✅ `/note <id> <text>` appends; `/note <id> clear`; shown in `/view`,
+  searchable, used by `/ask`, exported
+
+### Weekly digest
+- ✅ Sundays 09:00 in `TIMEZONE` (default Asia/Kuala_Lumpur); week's saves
+  by category plus one note older than 30 days; `/digest` on demand
+- ⚠️ Missed if the bot is down at 09:00 Sunday (no catch-up)
+
+### Fixes found along the way
+- ✅ Empty `DB_PATH=` (as shipped in `.env.example`) no longer means a
+  throwaway database — see `memory.md` #9

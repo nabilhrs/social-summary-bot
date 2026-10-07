@@ -218,6 +218,29 @@ still listed but retired.
 
 ---
 
+## 9. An empty `DB_PATH=` would have silently thrown away every save
+
+**Symptom:** None seen in practice; found while adding a `TIMEZONE`
+setting. Reproduced: with `DB_PATH=` empty, a table created on one
+connection isn't visible from the next.
+
+**Cause:** `.env.example` ships `DB_PATH=` with no value, and
+`deploy/setup.sh` copies it to `.env`. python-dotenv sets the variable to
+`""`, so `os.getenv("DB_PATH", "summarizer.db")` returned `""` (the default
+only applies when the variable is *missing*). `sqlite3.connect("")` opens a
+private temporary database that disappears when the connection closes.
+Every save would have been lost.
+
+**Fix:** `os.getenv("DB_PATH") or "summarizer.db"` (same pattern for
+`TIMEZONE`), plus a startup log line showing the resolved database path.
+
+**Lesson:** `os.getenv(name, default)` doesn't cover empty values, and
+`.env` templates create exactly those. For optional settings, use
+`os.getenv(name) or default`, and log any path the app writes data to at
+startup, so a wrong location shows up in the logs.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The

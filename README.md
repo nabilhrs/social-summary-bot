@@ -81,6 +81,15 @@ Message the bot directly, or tap a command from Telegram's "/" menu:
   merge yourself with `/merge`.
 - **`/ask`** — answers a question using only your saved notes, citing the
   note ids it used (e.g. `(#12)`), in the language you asked in.
+- **Titles and categories** — every save gets a short generated title (web
+  articles keep their headline) and a category. Gemini reuses your existing
+  categories and only creates a new one when nothing fits. Items saved
+  before this existed are titled and categorized by a background job.
+- **Buttons under each summary** — ✏️ Rename, 📂 Category, 📝 Note, 🗑 Delete.
+  Rename/Note/New category ask for text with a reply prompt.
+- **Weekly digest** — Sundays at 09:00 (`TIMEZONE`, default
+  `Asia/Kuala_Lumpur`): the week's saves grouped by category, plus one older
+  note to revisit. `/digest` shows it any time.
 
 Gemini calls retry temporary failures and fall back from `gemini-3.6-flash`
 to `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` (each has its own
@@ -94,10 +103,14 @@ never another authorized user's. Commands for managing what's saved:
 
 | Command | Does |
 |---|---|
-| `/list [n]` | Last `n` saved items (default 10, max 50), with a quick-delete button per item |
-| `/search <keyword>` | Search saved items by keyword |
+| `/list` | Category menu with counts; each category pages 10 at a time (`/list <category>` jumps to one) |
+| `/search <keyword>` | Search titles, summaries, original text, notes and categories |
 | `/ask <question>` | Answer a question from your saved notes, with citations |
-| `/view <id>` | Full summary for one item |
+| `/view <id>` | Full summary for one item, with the action buttons |
+| `/rename <id> <title>` | Change an item's title |
+| `/move <id> <category>` | Move an item to another (or a new) category |
+| `/note <id> <text>` | Add your own note to an item (`/note <id> clear` removes it) |
+| `/digest` | Show the weekly digest now |
 | `/merge <keep_id> <absorb_id>` | Merge two items into one (asks for confirmation) |
 | `/delete <id>` | Delete an item (asks for confirmation) |
 | `/undo <id>` | Revert a merged item to its pre-merge summary |
@@ -139,6 +152,10 @@ social-summary-bot/
 │   │   ├── commands.py      # slash commands
 │   │   ├── handlers.py      # message/file pipeline + merge/delete callbacks
 │   │   ├── formatting.py    # HTML rendering, error texts, keyboards
+│   │   ├── browse.py        # /list category menu and pages
+│   │   ├── actions.py       # buttons under summaries (rename/category/note/delete)
+│   │   ├── background.py    # title/category backfill job
+│   │   ├── digest.py        # weekly digest
 │   │   └── export.py        # /export file builders
 │   ├── extractors/
 │   │   ├── base.py          # URL routing, normalization
