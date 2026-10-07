@@ -134,4 +134,6 @@ def format_full_item(item: dict) -> str:
         lines.append(f"Merged from: {escape(merged_ids)}")
     lines.append("")
     lines.append(render_summary_html(item["summary"]))
+    if item.get("user_note"):
+        lines += ["", "<b>📝 Your note:</b>", escape(item["user_note"])]
     return "\n".join(lines)

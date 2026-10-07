@@ -16,6 +16,7 @@ from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, gen
 from app.ai.summarizer import answer_question, clean_category, clean_title
 from app.config import config
 from app.database.database import (
+    append_note,
     get_all_items,
     get_categories,
     update_fields,
@@ -312,6 +313,27 @@ async def move_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         f"📂 Moved #{item_id} to {category}" + (" (new category)." if is_new else ".")
     )
+
+
+async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    parsed = _id_and_rest(context.args)
+    if parsed is None or not parsed[1]:
+        await update.message.reply_text("Usage: /note <id> <your note>  (or /note <id> clear)")
+        return
+
+    item_id, note = parsed
+    if note.casefold() == "clear":
+        updated = await asyncio.to_thread(update_fields, item_id, user_id, user_note=None)
+        reply = f"🧹 Cleared your note on #{item_id}."
+    else:
+        updated = await asyncio.to_thread(append_note, item_id, user_id, note)
+        reply = f"📝 Added your note to #{item_id}."
+    await update.message.reply_text(reply if updated else f"No saved item found with id #{item_id}.")
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

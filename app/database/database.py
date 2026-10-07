@@ -147,6 +147,17 @@ def update_fields(row_id: int, user_id: int, **fields) -> bool:
         return cursor.rowcount > 0
 
 
+def append_note(row_id: int, user_id: int, note: str) -> bool:
+    """Adds `note` on a new line after any existing note."""
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET user_note = CASE WHEN user_note IS NULL OR user_note = '' "
+            "THEN ? ELSE user_note || char(10) || ? END WHERE id = ? AND user_id = ?",
+            (note, note, row_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+
 def get_items_missing_category(user_id: int) -> list[dict]:
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -193,8 +204,11 @@ def search_items(user_id: int, keyword: str, limit: int = 10) -> tuple[list[dict
     original_text, scoped to one user. Returns (matches limited to
     `limit`, total match count)."""
     pattern = f"%{keyword}%"
-    condition = "user_id = ? AND (title LIKE ? OR summary LIKE ? OR original_text LIKE ?)"
-    params = (user_id, pattern, pattern, pattern)
+    condition = (
+        "user_id = ? AND (title LIKE ? OR summary LIKE ? OR original_text LIKE ? "
+        "OR user_note LIKE ? OR category LIKE ?)"
+    )
+    params = (user_id, pattern, pattern, pattern, pattern, pattern)
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         total = conn.execute(

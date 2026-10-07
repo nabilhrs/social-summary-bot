@@ -32,6 +32,7 @@ from app.bot.commands import (
     export_command,
     rename_command,
     move_command,
+    note_command,
     setkey_command,
     handle_quick_action_callback,
     handle_list_callback,
@@ -62,6 +63,7 @@ _BOT_COMMANDS = [
     BotCommand("export", "Download all your notes as files"),
     BotCommand("rename", "Rename a saved item"),
     BotCommand("move", "Move a saved item to another category"),
+    BotCommand("note", "Add your own note to a saved item"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -98,6 +100,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CommandHandler("rename", rename_command))
     app.add_handler(CommandHandler("move", move_command))
+    app.add_handler(CommandHandler("note", note_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
@@ -118,7 +121,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_delete_request_callback, pattern=r"^delconfirm:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
     app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[auc].*)$"))
-    app.add_handler(CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat):\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
     app.add_error_handler(log_error)
 

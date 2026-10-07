@@ -152,3 +152,13 @@ def test_build_list_delete_keyboard_chunks_into_rows_of_five():
 def test_build_list_delete_keyboard_empty_items():
     keyboard = build_list_delete_keyboard([])
     assert len(keyboard.inline_keyboard) == 0
+
+
+def test_format_full_item_shows_category_and_escaped_note():
+    item = {
+        "id": 2, "title": "T", "source": "web", "url": None, "created_at": "2026-10-01T00:00:00",
+        "merged_from": None, "summary": "SUMMARY: s", "category": "Career", "user_note": "a < b",
+    }
+    text = format_full_item(item)
+    assert "📂 Career" in text
+    assert text.endswith("<b>📝 Your note:</b>\na &lt; b")

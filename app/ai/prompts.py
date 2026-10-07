@@ -128,6 +128,7 @@ def build_ask_prompt(question: str, items: list[dict], detailed_items: list[dict
     keyword matches) also get their full original text, already truncated."""
     summaries = "\n\n".join(
         f"#{item['id']} ({item['created_at'][:10]}) — {item.get('title') or 'Untitled'}\n{item['summary']}"
+        + (f"\nUser's own note: {item['user_note']}" if item.get("user_note") else "")
         for item in items
     )
     details = "\n\n".join(

@@ -14,12 +14,14 @@ from telegram.ext import ContextTypes
 
 from app.ai.summarizer import clean_category, clean_title
 from app.config import config
-from app.database.database import get_by_id, get_categories, update_fields
+from app.database.database import append_note, get_by_id, get_categories, update_fields
 
 RENAME_PROMPT = "✏️ Reply with a new title for #{id}"
 NEW_CATEGORY_PROMPT = "📂 Reply with a new category name for #{id}"
+NOTE_PROMPT = "📝 Reply with a note to add to #{id}"
 _RENAME_PROMPT_RE = re.compile(r"^✏️ Reply with a new title for #(\d+)")
 _NEW_CATEGORY_PROMPT_RE = re.compile(r"^📂 Reply with a new category name for #(\d+)")
+_NOTE_PROMPT_RE = re.compile(r"^📝 Reply with a note to add to #(\d+)")
 
 
 def build_item_actions_keyboard(item_id: int) -> InlineKeyboardMarkup:
@@ -28,8 +30,11 @@ def build_item_actions_keyboard(item_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("✏️ Rename", callback_data=f"act:rename:{item_id}"),
                 InlineKeyboardButton("📂 Category", callback_data=f"act:cat:{item_id}"),
+            ],
+            [
+                InlineKeyboardButton("📝 Note", callback_data=f"act:note:{item_id}"),
                 InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}"),
-            ]
+            ],
         ]
     )
 
@@ -65,6 +70,11 @@ async def handle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
             RENAME_PROMPT.format(id=item_id),
             reply_markup=ForceReply(input_field_placeholder="New title"),
         )
+    elif action == "note":
+        await query.message.reply_text(
+            NOTE_PROMPT.format(id=item_id),
+            reply_markup=ForceReply(input_field_placeholder="Your note"),
+        )
     elif action == "newcat":
         await query.message.reply_text(
             NEW_CATEGORY_PROMPT.format(id=item_id),
@@ -96,8 +106,9 @@ async def handle_setcat_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 def parse_reply_prompt(prompt_text: str | None) -> tuple[str, int] | None:
-    """("rename" | "category", item id) if `prompt_text` is one of our prompts."""
-    for kind, pattern in (("rename", _RENAME_PROMPT_RE), ("category", _NEW_CATEGORY_PROMPT_RE)):
+    """("rename" | "category" | "note", item id) if `prompt_text` is one of our prompts."""
+    prompts = (("rename", _RENAME_PROMPT_RE), ("category", _NEW_CATEGORY_PROMPT_RE), ("note", _NOTE_PROMPT_RE))
+    for kind, pattern in prompts:
         match = pattern.match(prompt_text or "")
         if match:
             return kind, int(match.group(1))
@@ -122,6 +133,13 @@ async def apply_reply_edit(message: Message, user_id: int) -> bool:
             return True
         updated = await asyncio.to_thread(update_fields, item_id, user_id, title=title)
         reply = f"✏️ Renamed #{item_id} to: {title}"
+    elif kind == "note":
+        note = (message.text or "").strip()
+        if not note:
+            await message.reply_text("That note is empty — nothing changed.")
+            return True
+        updated = await asyncio.to_thread(append_note, item_id, user_id, note)
+        reply = f"📝 Added your note to #{item_id}."
     else:
         existing = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
         category = clean_category(message.text, existing)

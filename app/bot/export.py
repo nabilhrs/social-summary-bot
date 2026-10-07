@@ -15,6 +15,8 @@ _EXPORTED_FIELDS = (
     "original_text",
     "merged_from",
     "previous_summary",
+    "category",
+    "user_note",
 )
 
 
@@ -28,6 +30,8 @@ def build_markdown(items: list[dict], exported_on: str) -> bytes:
     for item in items:
         lines.append(f"## #{item['id']} — {item.get('title') or 'Untitled'}")
         meta = [item["created_at"][:10], item["source"]]
+        if item.get("category"):
+            meta.append(item["category"])
         if item.get("author"):
             meta.append(item["author"])
         lines.append(f"_{' · '.join(meta)}_")
@@ -35,6 +39,9 @@ def build_markdown(items: list[dict], exported_on: str) -> bytes:
             lines.append(f"<{item['url']}>")
         if item.get("merged_from"):
             lines.append(f"Merged from: #{item['merged_from'].replace(',', ', #')}")
-        lines += ["", item["summary"].strip(), "", "<details><summary>Original text</summary>", ""]
+        lines += ["", item["summary"].strip()]
+        if item.get("user_note"):
+            lines += ["", f"**My note:** {item['user_note'].strip()}"]
+        lines += ["", "<details><summary>Original text</summary>", ""]
         lines += [item["original_text"].strip(), "", "</details>", "", "---", ""]
     return "\n".join(lines).encode("utf-8")

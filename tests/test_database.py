@@ -498,3 +498,22 @@ def test_init_db_adds_category_and_user_note_columns_to_old_table(tmp_path, monk
         columns = {row[1] for row in conn.execute("PRAGMA table_info(summaries)")}
         assert conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0] == 1
     assert {"category", "user_note"} <= columns
+
+
+def test_append_note_adds_lines_and_respects_owner(db_path):
+    row_id = database.save_summary(_make_content("T", "x"), "TL;DR: x", USER)
+
+    assert database.append_note(row_id, USER, "first thought") is True
+    assert database.append_note(row_id, USER, "second thought") is True
+    assert database.append_note(row_id, OTHER_USER, "intruder") is False
+
+    assert database.get_by_id(row_id, USER)["user_note"] == "first thought\nsecond thought"
+
+
+def test_search_items_matches_user_note_and_category(db_path):
+    noted = database.save_summary(_make_content("A", "x"), "TL;DR: x", USER, category="Travel")
+    database.append_note(noted, USER, "remember the ryokan in Kyoto")
+    database.save_summary(_make_content("B", "x"), "TL;DR: x", USER)
+
+    assert [item["id"] for item in database.search_items(USER, "ryokan")[0]] == [noted]
+    assert [item["id"] for item in database.search_items(USER, "travel")[0]] == [noted]

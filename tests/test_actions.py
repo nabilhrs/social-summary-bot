@@ -22,7 +22,7 @@ def _buttons(markup):
 
 def test_item_actions_keyboard_callback_data():
     data = [button.callback_data for button in _buttons(build_item_actions_keyboard(12))]
-    assert data == ["act:rename:12", "act:cat:12", "delconfirm:12"]
+    assert data == ["act:rename:12", "act:cat:12", "act:note:12", "delconfirm:12"]
 
 
 def test_category_picker_marks_current_and_offers_new():
@@ -92,3 +92,12 @@ def test_plain_messages_and_replies_to_other_text_are_not_edits(item_id):
     assert asyncio.run(apply_reply_edit(_FakeMessage("hi", _prompt("some summary")), USER)) is False
     not_bot = _prompt(RENAME_PROMPT.format(id=item_id), is_bot=False)
     assert asyncio.run(apply_reply_edit(_FakeMessage("hi", not_bot), USER)) is False
+
+
+def test_reply_to_note_prompt_appends_note(item_id):
+    from app.bot.actions import NOTE_PROMPT
+
+    for text in ["try this weekend", "worked well"]:
+        message = _FakeMessage(text, _prompt(NOTE_PROMPT.format(id=item_id)))
+        assert asyncio.run(apply_reply_edit(message, USER)) is True
+    assert database.get_by_id(item_id, USER)["user_note"] == "try this weekend\nworked well"

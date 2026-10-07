@@ -161,7 +161,9 @@ def select_ask_context(question: str, items: list[dict]) -> tuple[list[dict], li
     matches = rank_by_shared_keywords(
         question,
         items,
-        item_text=lambda item: f"{item.get('title') or ''} {item['summary']} {item['original_text']}",
+        item_text=lambda item: (
+            f"{item.get('title') or ''} {item['summary']} {item['original_text']} {item.get('user_note') or ''}"
+        ),
     )
     detailed = [
         {**item, "original_text": item["original_text"][:_ASK_DETAIL_CHARS]}
