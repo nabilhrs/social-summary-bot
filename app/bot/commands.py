@@ -5,6 +5,7 @@ Slash-command handlers (PRD 5.6, PRD V2 2.2).
 app/bot/handlers.py covers both URL and pasted text without a command.
 """
 import asyncio
+from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
@@ -22,6 +23,7 @@ from app.database.database import (
     set_user_api_key,
     resolve_gemini_api_key,
 )
+from app.bot.export import build_json, build_markdown
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
     build_delete_keyboard,
@@ -62,6 +64,7 @@ HELP_TEXT = (
     "`/merge <keep_id> <absorb_id>` — merge two saved items into one (asks for confirmation)\n"
     "`/delete <id>` — delete a saved item (asks for confirmation)\n"
     "`/undo <id>` — revert a merged item back to its pre-merge summary\n"
+    "`/export` — download all your notes (readable Markdown + full JSON backup)\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
 )
 
@@ -251,6 +254,30 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if len(rendered) > _MAX_REPLY_CHARS:
         rendered = render_summary_html(answer[:_MAX_REPLY_CHARS].rsplit("\n", 1)[0] + "\n…")
     await update.message.reply_text(rendered, parse_mode=ParseMode.HTML)
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+
+    items = await asyncio.to_thread(get_all_items, user_id)
+    if not items:
+        await update.message.reply_text("You haven't saved anything yet.")
+        return
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await update.message.reply_document(
+        document=build_markdown(items, today),
+        filename=f"notes-{today}.md",
+        caption=f"{len(items)} saved item(s), readable copy.",
+    )
+    await update.message.reply_document(
+        document=build_json(items),
+        filename=f"notes-backup-{today}.json",
+        caption="Complete backup (every field) — keep this one safe.",
+    )
 
 
 async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

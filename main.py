@@ -27,6 +27,7 @@ from app.bot.commands import (
     merge_command,
     delete_command,
     undo_command,
+    export_command,
     setkey_command,
     handle_quick_action_callback,
     handle_delete_request_callback,
@@ -47,6 +48,7 @@ _BOT_COMMANDS = [
     BotCommand("merge", "Merge two saved items into one"),
     BotCommand("delete", "Delete a saved item"),
     BotCommand("undo", "Revert a merged item to its pre-merge summary"),
+    BotCommand("export", "Download all your notes as files"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -79,6 +81,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("merge", merge_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("undo", undo_command))
+    app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no|view):\d+:\d+$"))
