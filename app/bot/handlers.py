@@ -50,6 +50,7 @@ from app.database.database import (
     delete_item,
     resolve_gemini_api_key,
 )
+from app.bot.actions import apply_reply_edit, build_item_actions_keyboard
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
     SUMMARY_FAILED_TEXT,
@@ -117,6 +118,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     raw_text = message.text.strip()
     if not raw_text:
         await message.reply_text(INVALID_INPUT_TEXT)
+        return
+
+    if await apply_reply_edit(message, user.id):
         return
 
     # Resolved before any extraction work — no point downloading a TikTok
@@ -195,6 +199,7 @@ async def _summarize_and_save(message: Message, user_id: int, api_key: str, cont
     await message.reply_text(
         format_saved_summary(new_id, content.get("title"), summary.category, summary.text),
         parse_mode=ParseMode.HTML,
+        reply_markup=build_item_actions_keyboard(new_id) if new_id else None,
     )
     if new_id is None:
         return

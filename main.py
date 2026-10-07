@@ -16,6 +16,7 @@ from telegram.ext import (
     filters,
 )
 
+from app.bot.actions import handle_action_callback, handle_setcat_callback
 from app.bot.background import backfill_loop
 from app.config import config
 from app.bot.commands import (
@@ -117,6 +118,8 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_delete_request_callback, pattern=r"^delconfirm:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
     app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[auc].*)$"))
+    app.add_handler(CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat):\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
     app.add_error_handler(log_error)
 
     return app

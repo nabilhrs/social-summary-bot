@@ -25,6 +25,7 @@ from app.database.database import (
     set_user_api_key,
     resolve_gemini_api_key,
 )
+from app.bot.actions import build_item_actions_keyboard
 from app.bot.browse import CATEGORY, MENU_CALLBACK, decode_page, format_item_line, render_menu, render_page
 from app.bot.export import build_json, build_markdown
 from app.bot.formatting import (
@@ -353,7 +354,9 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"No saved item found with id #{item_id}.")
         return
 
-    await update.message.reply_text(format_full_item(item), parse_mode=ParseMode.HTML)
+    await update.message.reply_text(
+        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id)
+    )
 
 
 async def merge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
