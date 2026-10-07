@@ -36,10 +36,11 @@ from app.bot.formatting import (
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
-    "Send me a URL — articles, Threads posts, or TikTok videos (I watch the "
-    "video itself, not just the caption) — or paste text directly, and I'll "
-    "send back a summary and save it for later. If something looks related "
-    "to an earlier save, I'll offer to merge them into one.\n\n"
+    "Send me a link (articles, Threads posts, TikTok videos), paste text, or "
+    "send a photo, screenshot, voice note, video, or PDF — I'll send back a "
+    "summary and save it. If something looks related to an earlier save, I'll "
+    "offer to merge them.\n\n"
+    "Later, use /ask to ask questions about everything you've saved.\n\n"
     "Type /help to see everything I can do."
 )
 
@@ -49,6 +50,9 @@ HELP_TEXT = (
     "extract and summarize it. TikTok videos take longer since I actually "
     "download and watch them.\n"
     "• Send pasted text — I'll summarize it directly.\n"
+    "• Send a photo or screenshot, voice note, audio, video, or a PDF/text "
+    "file — I'll transcribe or read it first, then summarize. A caption is "
+    "kept as context.\n"
     "• Short notes get a quick 1-3 sentence summary; longer content gets "
     "the full TL;DR / KEY POINTS / TAKEAWAY structure.\n"
     "• If something looks related to an earlier save, I'll offer to merge "

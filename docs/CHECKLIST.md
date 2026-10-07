@@ -332,3 +332,50 @@ see the "Storage" section above).
 See `DEPLOY.md` for the full setup. Summary: a free-tier always-on cloud
 VM running the bot as a `systemd` service (auto-restart on crash, starts
 on boot), so it no longer depends on the owner's own laptop being open.
+
+## October 2026 improvements (personal use)
+
+The bot is now for personal use only, so multi-user work (invited-user
+onboarding, encrypting stored API keys) was deliberately skipped.
+
+### Gemini reliability (fixes a live "Something went wrong" on a Threads link)
+- ✅ All Gemini calls go through `app/ai/gemini.py`: retry on 5xx/timeouts,
+  fall back `gemini-3.6-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`
+- ✅ Specific messages for daily quota, rate limit, rejected key, overload
+- ✅ Verified live against real 503 "high demand" and 429 rate-limit responses
+
+### Formatting
+- ✅ Summaries rendered as escaped Telegram HTML: bold section labels,
+  • bullets, the stray `SUMMARY:` label removed; stored text unchanged
+- ✅ Every summary ends with "Saved as #id"
+
+### Combine Mode beyond the last 10 saves
+- ✅ `app/ai/related.py`: 10 most recent items plus up to 10 older items
+  sharing ≥2 keywords (English + Malay stopwords ignored)
+- ✅ Verified live: a related note 25 saves back was matched
+
+### `/ask`
+- ✅ Answers from saved notes only, citing ids like `(#12)`, in the
+  question's language; says so when the notes don't cover it
+- ✅ Context: every summary (200k-char budget, newest first) plus full
+  original text of the 5 best keyword matches
+- ✅ Verified live on real notes (English and Malay questions, and an
+  unanswerable one)
+
+### `/export`
+- ✅ Sends a readable Markdown file and a complete JSON backup
+- ⚠️ File builders verified on real notes; the Telegram upload itself
+  needs a check on the deployed bot
+
+### Photos, voice notes, audio, video, documents
+- ✅ `app/extractors/media.py`: images (text transcribed), voice/audio
+  (verbatim transcript), video (described), PDFs (text extracted),
+  text files (decoded directly); caption kept as context
+- ✅ Transcript is saved as original_text, so `/search` and `/ask` find it
+- ✅ 20 MB limit (Telegram's bot download cap) with a clear message
+- ✅ Unsupported message types (stickers, locations, ...) get a reply
+- ✅ TikTok shares the same upload/describe helper
+- ✅ Gemini side verified live with a generated screenshot, an OGG/Opus
+  voice note and a PDF
+- ⚠️ Telegram download step needs a check on the deployed bot
+- ❌ Albums (several photos sent together) are summarized one photo at a time

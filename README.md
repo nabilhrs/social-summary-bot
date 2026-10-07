@@ -1,10 +1,11 @@
 # Social Summary Bot
 
-A Telegram bot that takes a URL — articles, Threads posts, TikTok videos —
-or pasted text, generates an AI summary via Gemini, and saves it to a local
-SQLite database. Related saves get offered a merge instead of piling up as
-duplicates, and everything you save can be listed, searched, viewed,
-merged, or deleted back from Telegram itself.
+A Telegram bot that takes a URL (articles, Threads posts, TikTok videos),
+pasted text, or a file (photo/screenshot, voice note, audio, video, PDF),
+generates an AI summary via Gemini, and saves it to a local SQLite database.
+Related saves get offered a merge instead of piling up as duplicates. You
+can ask questions across everything you've saved with `/ask`, and list,
+search, view, merge, delete, or export it from Telegram itself.
 
 Multiple people can use the same bot — each person's saved items are
 private to them, gated by a hardcoded allowlist (not open to the public
@@ -67,10 +68,24 @@ Message the bot directly, or tap a command from Telegram's "/" menu:
     summarizes what's shown and said, not just the caption. This takes
     noticeably longer (expect 30s+); the bot sends a heads-up while it
     works.
+- **Send a file** — photos and screenshots (text is transcribed), voice
+  notes and audio (transcribed verbatim), videos (described), PDFs and
+  plain-text files (text extracted). A caption is kept as context. The
+  transcript is what gets saved, so `/search` and `/ask` can find a voice
+  note by what was said. Telegram limits bots to 20 MB downloads.
 - **Combine Mode** — if new content looks related to something already
   saved, the bot offers to merge them into one summary instead of leaving
   duplicates, with an optional "view first" button if you don't remember
-  the older item. You can also trigger a merge yourself with `/merge`.
+  the older item. It checks your 10 most recent saves plus up to 10 older
+  ones that share keywords with the new content. You can also trigger a
+  merge yourself with `/merge`.
+- **`/ask`** — answers a question using only your saved notes, citing the
+  note ids it used (e.g. `(#12)`), in the language you asked in.
+
+Gemini calls retry temporary failures and fall back from `gemini-3.6-flash`
+to `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` (each has its own
+free-tier quota). If everything fails, the bot says why: daily quota used
+up, rate limit, rejected key, or Gemini overloaded.
 
 Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`),
 scoped to the Telegram user who saved it — Combine Mode's related-item
@@ -81,10 +96,12 @@ never another authorized user's. Commands for managing what's saved:
 |---|---|
 | `/list [n]` | Last `n` saved items (default 10, max 50), with a quick-delete button per item |
 | `/search <keyword>` | Search saved items by keyword |
+| `/ask <question>` | Answer a question from your saved notes, with citations |
 | `/view <id>` | Full summary for one item |
 | `/merge <keep_id> <absorb_id>` | Merge two items into one (asks for confirmation) |
 | `/delete <id>` | Delete an item (asks for confirmation) |
 | `/undo <id>` | Revert a merged item to its pre-merge summary |
+| `/export` | Download all notes: a readable Markdown file and a complete JSON backup |
 | `/setkey <api_key>` | Set your own Gemini API key (required for every invited user except the owner) |
 
 Every authorized user besides the owner sees a prompt to run `/setkey` the
@@ -108,8 +125,9 @@ venv\Scripts\pytest
 ```
 
 Pure logic (parsing, formatting, database queries) is unit tested.
+The Gemini retry/fallback logic is unit tested against a fake client.
 Network- and filesystem-dependent extraction (web/Threads/TikTok fetches,
-Gemini calls) is verified live rather than mocked — see the commit history
+real Gemini calls) is verified live rather than mocked — see the commit history
 and [`docs/memory.md`](docs/memory.md) for what's been checked and how.
 
 ## Project structure
@@ -119,15 +137,19 @@ social-summary-bot/
 ├── app/
 │   ├── bot/
 │   │   ├── commands.py      # slash commands
-│   │   ├── handlers.py      # plain-message pipeline + merge/delete callbacks
-│   │   └── formatting.py    # shared display/keyboard builders
+│   │   ├── handlers.py      # message/file pipeline + merge/delete callbacks
+│   │   ├── formatting.py    # HTML rendering, error texts, keyboards
+│   │   └── export.py        # /export file builders
 │   ├── extractors/
 │   │   ├── base.py          # URL routing, normalization
 │   │   ├── webpage.py       # generic articles (trafilatura)
 │   │   ├── threads.py       # Threads posts (Open Graph tags)
-│   │   └── tiktok.py        # TikTok videos (yt-dlp + Gemini video understanding)
+│   │   ├── tiktok.py        # TikTok videos (yt-dlp + Gemini video understanding)
+│   │   └── media.py         # Telegram photos, voice, audio, video, documents
 │   ├── ai/
-│   │   ├── summarizer.py
+│   │   ├── gemini.py        # every Gemini call: retries, model fallback, file uploads
+│   │   ├── summarizer.py    # summarize, merge, /ask
+│   │   ├── related.py       # Combine Mode candidate selection
 │   │   └── prompts.py
 │   ├── database/
 │   │   └── database.py
