@@ -5,6 +5,7 @@ Run with: python main.py
 Requires TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_IDS in .env (see .env.example).
 """
 import logging
+import os
 
 from telegram import BotCommand
 from telegram.ext import (
@@ -136,6 +137,7 @@ def build_app() -> Application:
 def main() -> None:
     init_db()
     app = build_app()
+    logger.info("Database: %s", os.path.abspath(config.db_path))
     logger.info("Bot starting — polling for updates...")
     app.run_polling(allowed_updates=["message", "callback_query"])
 

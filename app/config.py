@@ -28,10 +28,12 @@ class Config:
             int(uid.strip()) for uid in raw_ids.split(",") if uid.strip()
         ]
 
-        self.db_path: str = os.getenv("DB_PATH", "summarizer.db")
+        # `or`, not a getenv default: .env.example ships `DB_PATH=` empty, and
+        # sqlite3.connect("") silently opens a throwaway temp database.
+        self.db_path: str = os.getenv("DB_PATH") or "summarizer.db"
 
         # IANA name, e.g. Asia/Kuala_Lumpur — when the weekly digest goes out.
-        self.timezone: str = os.getenv("TIMEZONE", "Asia/Kuala_Lumpur")
+        self.timezone: str = os.getenv("TIMEZONE") or "Asia/Kuala_Lumpur"
 
         self._validate()
 
