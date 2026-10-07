@@ -8,8 +8,8 @@ URL -> normalize -> summarize (flagging related saved items) -> reply -> save
 import asyncio
 import logging
 
-from telegram import Update
-from telegram.constants import ParseMode
+from telegram import Message, Update
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from app.config import config
@@ -26,6 +26,18 @@ from app.extractors.base import (
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
+from app.extractors.media import (
+    AUDIO,
+    IMAGE,
+    MAX_DOWNLOAD_BYTES,
+    PDF,
+    TEXT,
+    VIDEO,
+    MediaInfo,
+    build_text as build_media_text,
+    classify_document,
+    extract_text,
+)
 from app.ai.gemini import GeminiError
 from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
@@ -59,6 +71,24 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "Please paste the text here and I'll summarize it."
 )
 TIKTOK_PROCESSING_TEXT = "🎥 Downloading and analyzing this TikTok video — this may take a moment..."
+MEDIA_PROCESSING_TEXTS = {
+    IMAGE: "🖼️ Reading your image...",
+    AUDIO: "🎙️ Transcribing your audio — this may take a moment...",
+    VIDEO: "🎥 Watching your video — this may take a moment...",
+    PDF: "📄 Reading your PDF — this may take a moment...",
+    TEXT: "📄 Reading your file...",
+}
+UNSUPPORTED_FILE_TEXT = (
+    "I can't read this file type. I can summarize PDFs, plain-text files, "
+    "images, audio, and video."
+)
+FILE_TOO_LARGE_TEXT = "That file is over 20 MB — Telegram doesn't let bots download files that big."
+MEDIA_DOWNLOAD_FAILED_TEXT = "I couldn't download that file from Telegram. Please try sending it again."
+MEDIA_EMPTY_TEXT = "I couldn't find anything to summarize in that file."
+UNSUPPORTED_MESSAGE_TEXT = (
+    "I can't summarize this kind of message. Send me text, a link, a photo or "
+    "screenshot, a voice note, audio, a video, or a PDF/text file."
+)
 THREADS_LIMITATION_NOTE = (
     "ℹ️ Threads posts can be part of a longer thread (including Threads' own "
     "native \"1/9\"-style numbering, which isn't visible to a plain link fetch). "
@@ -130,23 +160,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         content = normalize_pasted_text(raw_text)
 
-    all_items = await asyncio.to_thread(get_recent, user.id, None)
+    await _summarize_and_save(message, user.id, api_key, content)
+    if is_threads_content:
+        await message.reply_text(THREADS_LIMITATION_NOTE)
+
+
+async def _summarize_and_save(message: Message, user_id: int, api_key: str, content: dict) -> None:
+    """Shared tail of every input path: summarize, save, reply, and offer a
+    merge if Gemini flagged a related saved item."""
+    all_items = await asyncio.to_thread(get_recent, user_id, None)
     recent_items = pick_candidates(content["text"], all_items, recent_limit=_RECENT_HISTORY_LIMIT)
 
+    await message.chat.send_action(ChatAction.TYPING)
     try:
         summary = await summarize(content, recent_items, api_key)
     except GeminiError as exc:
         await message.reply_text(gemini_error_text(exc))
         return
 
-    await message.reply_text(render_summary_html(summary.text), parse_mode=ParseMode.HTML)
-    if is_threads_content:
-        await message.reply_text(THREADS_LIMITATION_NOTE)
-
     try:
-        new_id = await asyncio.to_thread(save_summary, content, summary.text, user.id)
+        new_id = await asyncio.to_thread(save_summary, content, summary.text, user_id)
     except Exception:
         logger.exception("Failed to save summary to database")
+        new_id = None
+
+    footer = f"\n\n<i>Saved as #{new_id}</i>" if new_id else "\n\n<i>⚠️ Couldn't save this one.</i>"
+    await message.reply_text(render_summary_html(summary.text) + footer, parse_mode=ParseMode.HTML)
+    if new_id is None:
         return
 
     match = next((item for item in recent_items if item["id"] == summary.related_id), None)
@@ -161,6 +201,92 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"This looks related to #{match['id']} — {title}. Want me to merge these into one summary?",
         reply_markup=build_merge_keyboard(match["id"], new_id),
     )
+
+
+def _media_info(message: Message):
+    """(Telegram file object, MediaInfo) for a supported media message, or
+    (None, None) if it's a document type this bot can't read."""
+    if message.photo:
+        photo = message.photo[-1]  # largest resolution
+        return photo, MediaInfo(IMAGE, "photo", "image/jpeg", photo.file_size)
+    if message.voice:
+        voice = message.voice
+        return voice, MediaInfo(AUDIO, "voice", voice.mime_type or "audio/ogg", voice.file_size)
+    if message.audio:
+        audio = message.audio
+        name = audio.title or audio.file_name
+        return audio, MediaInfo(AUDIO, "audio", audio.mime_type or "audio/mpeg", audio.file_size, name)
+    if message.video:
+        video = message.video
+        return video, MediaInfo(VIDEO, "video", video.mime_type or "video/mp4", video.file_size, video.file_name)
+    if message.video_note:
+        note = message.video_note
+        return note, MediaInfo(VIDEO, "video", "video/mp4", note.file_size)
+    if message.document:
+        document = message.document
+        kind = classify_document(document.mime_type)
+        if kind is None:
+            return None, None
+        source = {PDF: "pdf", TEXT: "document"}.get(kind, kind)
+        return document, MediaInfo(kind, source, document.mime_type, document.file_size, document.file_name)
+    return None, None
+
+
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.message
+    if message is None:
+        return
+    if user is None or not config.is_authorized(user.id):
+        await message.reply_text(UNAUTHORIZED_TEXT)
+        return
+
+    file_obj, info = _media_info(message)
+    if info is None:
+        await message.reply_text(UNSUPPORTED_FILE_TEXT)
+        return
+    if info.file_size and info.file_size > MAX_DOWNLOAD_BYTES:
+        await message.reply_text(FILE_TOO_LARGE_TEXT)
+        return
+
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
+    if api_key is None:
+        await message.reply_text(NO_API_KEY_TEXT)
+        return
+
+    await message.reply_text(MEDIA_PROCESSING_TEXTS[info.kind])
+    try:
+        telegram_file = await file_obj.get_file()
+        data = bytes(await telegram_file.download_as_bytearray())
+    except Exception:
+        logger.exception("Failed to download %s from Telegram", info.source)
+        await message.reply_text(MEDIA_DOWNLOAD_FAILED_TEXT)
+        return
+
+    try:
+        extracted = await asyncio.to_thread(extract_text, api_key, data, info)
+    except GeminiError as exc:
+        await message.reply_text(gemini_error_text(exc))
+        return
+    if not extracted:
+        await message.reply_text(MEDIA_EMPTY_TEXT)
+        return
+
+    content = {
+        "title": info.file_name,
+        "author": None,
+        "source": info.source,
+        "url": None,
+        "text": build_media_text(extracted, message.caption),
+    }
+    await _summarize_and_save(message, user.id, api_key, content)
+
+
+async def handle_unsupported(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if update.message is None or user is None or not config.is_authorized(user.id):
+        return
+    await update.message.reply_text(UNSUPPORTED_MESSAGE_TEXT)
 
 
 async def handle_merge_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

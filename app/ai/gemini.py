@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 MODELS = ("gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 
+_MAX_UPLOAD_POLL_SECONDS = 120
 _ATTEMPTS_PER_MODEL = 2
 _RETRY_DELAY_SECONDS = 2
 _TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
@@ -106,3 +107,43 @@ def generate_text(
             break
 
     raise GeminiError(_final_kind(failures))
+
+
+def describe_file(
+    api_key: str,
+    file,
+    prompt: str,
+    mime_type: str | None = None,
+    timeout_seconds: float = 60,
+    deadline_seconds: float = 100,
+) -> str:
+    """Blocking. Uploads a file (path or binary stream) to Gemini's Files API,
+    waits for processing, asks `prompt` about it via generate_text(), and
+    always deletes the upload afterward. Raises GeminiError on failure."""
+    client = genai.Client(api_key=api_key)
+    try:
+        uploaded = client.files.upload(file=file, config=types.UploadFileConfig(mime_type=mime_type))
+    except errors.APIError as exc:
+        logger.error("Gemini file upload failed: %s", exc)
+        if _is_invalid_key(exc):
+            raise GeminiError(INVALID_KEY) from exc
+        raise GeminiError(QUOTA_RATE if exc.code == 429 else UNAVAILABLE) from exc
+    except httpx.TransportError as exc:
+        logger.error("Gemini file upload network error: %s", exc)
+        raise GeminiError(UNAVAILABLE) from exc
+
+    try:
+        waited = 0
+        while uploaded.state.name == "PROCESSING" and waited < _MAX_UPLOAD_POLL_SECONDS:
+            time.sleep(1)
+            waited += 1
+            uploaded = client.files.get(name=uploaded.name)
+        if uploaded.state.name != "ACTIVE":
+            logger.error("Uploaded file never became active (state=%s)", uploaded.state)
+            raise GeminiError(FAILED)
+        return generate_text(api_key, [uploaded, prompt], timeout_seconds, deadline_seconds)
+    finally:
+        try:
+            client.files.delete(name=uploaded.name)
+        except Exception:
+            logger.warning("Failed to delete uploaded Gemini file %s", uploaded.name)

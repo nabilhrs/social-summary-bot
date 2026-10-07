@@ -32,7 +32,13 @@ from app.bot.commands import (
     handle_quick_action_callback,
     handle_delete_request_callback,
 )
-from app.bot.handlers import handle_message, handle_merge_callback, handle_delete_callback
+from app.bot.handlers import (
+    handle_delete_callback,
+    handle_media,
+    handle_merge_callback,
+    handle_message,
+    handle_unsupported,
+)
 from app.database.database import init_db
 
 # Registered with Telegram via set_my_commands so clients show a tappable "/"
@@ -84,6 +90,19 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO
+            | filters.VOICE
+            | filters.AUDIO
+            | filters.VIDEO
+            | filters.VIDEO_NOTE
+            | filters.Document.ALL,
+            handle_media,
+        )
+    )
+    # Anything else (stickers, locations, polls...) gets a clear reply instead of silence.
+    app.add_handler(MessageHandler(~filters.COMMAND, handle_unsupported))
     app.add_handler(CallbackQueryHandler(handle_merge_callback, pattern=r"^merge:(yes|no|view):\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_request_callback, pattern=r"^delconfirm:\d+$"))

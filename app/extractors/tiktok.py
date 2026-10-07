@@ -19,26 +19,18 @@ import asyncio
 import logging
 import os
 import tempfile
-import time
 
 import yt_dlp
-from google import genai
 
-from app.ai.gemini import GeminiError, generate_text
+from app.ai.gemini import GeminiError, describe_file
+from app.extractors.media import PROMPTS, VIDEO
 
 logger = logging.getLogger(__name__)
 
-_OVERALL_TIMEOUT_SECONDS = 180
+_OVERALL_TIMEOUT_SECONDS = 240
 _DESCRIBE_TIMEOUT_SECONDS = 60
 _DESCRIBE_DEADLINE_SECONDS = 100
 _MAX_FILESIZE_BYTES = 200 * 1024 * 1024
-_MAX_UPLOAD_POLL_SECONDS = 60
-
-_DESCRIBE_PROMPT = (
-    "Describe what actually happens in this video — visuals, actions, and "
-    "any spoken or sung content — in enough detail for someone who hasn't "
-    "watched it to understand what it's about."
-)
 
 
 def _build_text(description: str, caption: str | None) -> str:
@@ -49,9 +41,9 @@ def _build_text(description: str, caption: str | None) -> str:
 
 def _download_and_describe(url: str, api_key: str) -> dict | None:
     """Runs in a worker thread — yt-dlp and the genai SDK's file upload are
-    both synchronous. Downloads the video to a temp dir, uploads it to
-    Gemini, asks for a description, then cleans up both the temp file and
-    the uploaded copy before returning, regardless of outcome."""
+    both synchronous. Downloads the video to a temp dir and has Gemini
+    describe it (describe_file deletes the upload; the temp dir cleans up
+    the local copy)."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         opts = {
             "quiet": True,
@@ -73,23 +65,11 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
             return None
         file_path = os.path.join(tmp_dir, files[0])
 
-        uploaded = None
         try:
-            client = genai.Client(api_key=api_key)
-            uploaded = client.files.upload(file=file_path)
-            waited = 0
-            while uploaded.state.name == "PROCESSING" and waited < _MAX_UPLOAD_POLL_SECONDS:
-                time.sleep(1)
-                waited += 1
-                uploaded = client.files.get(name=uploaded.name)
-
-            if uploaded.state.name != "ACTIVE":
-                logger.warning("Uploaded video never became active (state=%s) for %s", uploaded.state, url)
-                return None
-
-            description = generate_text(
+            description = describe_file(
                 api_key,
-                [uploaded, _DESCRIBE_PROMPT],
+                file_path,
+                PROMPTS[VIDEO],
                 timeout_seconds=_DESCRIBE_TIMEOUT_SECONDS,
                 deadline_seconds=_DESCRIBE_DEADLINE_SECONDS,
             )
@@ -98,12 +78,6 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
         except Exception:
             logger.exception("Gemini video description failed for %s", url)
             return None
-        finally:
-            if uploaded is not None:
-                try:
-                    client.files.delete(name=uploaded.name)
-                except Exception:
-                    logger.warning("Failed to clean up uploaded Gemini file for %s", url)
 
     author = info.get("uploader") or info.get("creator")
     caption = (info.get("description") or "").strip() or None
