@@ -158,6 +158,28 @@ def append_note(row_id: int, user_id: int, note: str) -> bool:
         return cursor.rowcount > 0
 
 
+def get_items_since(user_id: int, since_iso: str) -> list[dict]:
+    """Items saved (or last merged into) at or after `since_iso`, newest first."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, title, original_text, category, created_at FROM summaries "
+            "WHERE user_id = ? AND created_at >= ? ORDER BY id DESC",
+            (user_id, since_iso),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_random_item_before(user_id: int, before_iso: str) -> dict | None:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM summaries WHERE user_id = ? AND created_at < ? ORDER BY RANDOM() LIMIT 1",
+            (user_id, before_iso),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def get_items_missing_category(user_id: int) -> list[dict]:
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row

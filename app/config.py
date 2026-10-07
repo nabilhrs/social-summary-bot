@@ -30,6 +30,9 @@ class Config:
 
         self.db_path: str = os.getenv("DB_PATH", "summarizer.db")
 
+        # IANA name, e.g. Asia/Kuala_Lumpur — when the weekly digest goes out.
+        self.timezone: str = os.getenv("TIMEZONE", "Asia/Kuala_Lumpur")
+
         self._validate()
 
     def _validate(self):

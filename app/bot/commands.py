@@ -28,6 +28,7 @@ from app.database.database import (
 )
 from app.bot.actions import build_item_actions_keyboard
 from app.bot.browse import CATEGORY, MENU_CALLBACK, decode_page, format_item_line, render_menu, render_page
+from app.bot.digest import send_digest
 from app.bot.export import build_json, build_markdown
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
@@ -334,6 +335,15 @@ async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         updated = await asyncio.to_thread(append_note, item_id, user_id, note)
         reply = f"📝 Added your note to #{item_id}."
     await update.message.reply_text(reply if updated else f"No saved item found with id #{item_id}.")
+
+
+async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+    if not await send_digest(context.bot, user_id):
+        await update.message.reply_text("Nothing to show yet — save a few notes first.")
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
