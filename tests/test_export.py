@@ -14,6 +14,8 @@ ITEM = {
     "original_text": "Long original text.",
     "merged_from": "1,2",
     "previous_summary": "TL;DR: older.",
+    "category": "Food & Drink",
+    "user_note": "Try the iced latte.",
 }
 
 
@@ -31,7 +33,8 @@ def test_build_markdown_includes_metadata_summary_and_original():
     assert text.startswith("# Saved notes — exported 2026-10-07")
     assert "1 item(s)" in text
     assert "## #3 — Café review" in text
-    assert "_2026-10-01 · web · Ana_" in text
+    assert "_2026-10-01 · web · Food & Drink · Ana_" in text
+    assert "**My note:** Try the iced latte." in text
     assert "<https://example.com/a>" in text
     assert "Merged from: #1, #2" in text
     assert "TL;DR: good coffee." in text
@@ -39,7 +42,7 @@ def test_build_markdown_includes_metadata_summary_and_original():
 
 
 def test_build_markdown_handles_untitled_minimal_item():
-    item = {**ITEM, "title": None, "author": None, "url": None, "merged_from": None}
+    item = {**ITEM, "title": None, "author": None, "url": None, "merged_from": None, "category": None, "user_note": None}
     text = build_markdown([item], "2026-10-07").decode("utf-8")
     assert "## #3 — Untitled" in text
     assert "_2026-10-01 · web_" in text
