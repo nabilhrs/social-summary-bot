@@ -56,7 +56,7 @@ from app.database.database import init_db
 _BOT_COMMANDS = [
     BotCommand("start", "Show the welcome message"),
     BotCommand("help", "Show what I can do"),
-    BotCommand("list", "Show your last saved items"),
+    BotCommand("list", "Browse your notes by category"),
     BotCommand("search", "Search your saved items"),
     BotCommand("ask", "Ask a question about your saved notes"),
     BotCommand("view", "Show the full summary for a saved item"),

@@ -1,181 +1,258 @@
 # Social Summary Bot
 
-A Telegram bot that takes a URL (articles, Threads posts, TikTok videos),
-pasted text, or a file (photo/screenshot, voice note, audio, video, PDF),
-generates an AI summary via Gemini, and saves it to a local SQLite database.
-Related saves get offered a merge instead of piling up as duplicates. You
-can ask questions across everything you've saved with `/ask`, and list,
-search, view, merge, delete, or export it from Telegram itself.
+A personal Telegram bot that turns whatever you send it into a short, saved summary: articles, Threads posts, TikTok and Instagram videos, pasted text, screenshots, voice notes, audio, videos and PDFs. Every save gets a title and a category, related notes can be merged, and you can ask questions across everything you've saved.
 
-Multiple people can use the same bot — each person's saved items are
-private to them, gated by a hardcoded allowlist (not open to the public
-internet; see Setup).
+## Features
 
-See [the V1 spec](docs/summarizer_bot_prd_v1.md) for the original
-spec and [the V2 spec](docs/summarizer_bot_prd_v2.md) for what's
-been added since. [CHECKLIST.md](docs/CHECKLIST.md) is the up-to-date status of
-every feature. [memory.md](docs/memory.md) logs bugs found through real use and
-why they happened — worth a read before touching the extraction or
-Combine Mode code.
+- **Send almost anything.** A link (web article, Threads post, TikTok video, Instagram reel or video post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
+- **Videos are actually watched.** TikTok and Instagram videos are downloaded and Gemini describes what's shown and said, not just the caption.
+- **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said.
+- **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
+- **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
+- **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note and 🗑 Delete buttons.
+- **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
+- **Browse by category.** `/list` shows your categories with counts, and each one pages through 10 notes at a time.
+- **Ask your notes.** `/ask` answers a question using only what you've saved, and cites the notes it used, e.g. `(#12)`. It answers in the language you ask in.
+- **Weekly digest.** Every Sunday at 9am, the week's saves grouped by category plus one older note to revisit.
+- **Your data, exportable.** `/export` sends a readable Markdown file and a complete JSON backup.
+- **Keeps working when Gemini is busy.** Temporary errors are retried, and the bot falls back to lighter models, each with its own free quota. If everything fails, it tells you why: daily quota used up, rate limit, rejected key or overloaded.
 
-## Setup
+How to use the bot: see [USER_GUIDE.md](USER_GUIDE.md).
 
-1. Create a virtual environment (a 64-bit Python interpreter is required —
-   `cryptography`, a transitive dependency, has no prebuilt wheels for 32-bit
-   Windows and will fail to build from source):
-   ```
-   py -3.14 -m venv venv
-   ```
-2. Install dependencies:
-   ```
-   venv\Scripts\pip install -r requirements.txt
-   ```
-   This includes `yt-dlp` with its browser-impersonation extra (needed to
-   get past TikTok's bot-challenge), which pulls in a few extra packages —
-   the install takes a little longer than a typical Python project.
-3. Copy `.env.example` to `.env` and fill in:
-   - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-   - `AUTHORIZED_USER_IDS` — comma-separated numeric Telegram user IDs allowed
-     to use the bot (get an ID from [@userinfobot](https://t.me/userinfobot)).
-     List yourself first — on first run after adding more people, any
-     pre-existing saved items are assigned to whichever ID is listed first.
-     Every listed user gets their own private saved items; no one sees
-     anyone else's.
-   - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey).
-     Only used for the *first* id in `AUTHORIZED_USER_IDS` (the owner) — every
-     other invited user must set their own key from inside the bot with
-     `/setkey`, so no one but the owner can ever consume this key's cost.
-4. Run the bot:
-   ```
-   venv\Scripts\python main.py
-   ```
+## How it works
 
-## Usage
+```mermaid
+flowchart LR
+    U(["You on Telegram"]) -- "text, links, files, taps" --> TG["Telegram Bot API"]
+    TG -- "long polling" --> B["Bot<br/>(python main.py)"]
+    B -- "replies, buttons" --> TG
+    B <-- "notes, categories" --> DB[("SQLite<br/>summarizer.db")]
+    B -- "articles" --> TR["trafilatura"]
+    B -- "Threads posts" --> OG["Open Graph tags"]
+    B -- "TikTok / Instagram" --> YT["yt-dlp"]
+    B -- "summaries, transcripts,<br/>video and image reading" --> G["Google Gemini<br/>main model + fallbacks"]
+    J["Background jobs<br/>title/category backfill, Sunday digest"] --> B
+```
 
-Message the bot directly, or tap a command from Telegram's "/" menu:
+The bot polls Telegram for new messages instead of using a webhook, so it needs no public URL, open ports or HTTPS certificate. It just needs a machine that stays on, like a free cloud VM (see [Hosting](#hosting)).
 
-- **Paste text** — summarized as-is. Short notes (under ~80 words) get a
-  tight 1-3 sentence summary; longer content gets the full
-  TL;DR / KEY POINTS / TAKEAWAY structure.
-- **Send a URL** — the bot fetches and summarizes it:
-  - Regular web articles are extracted with `trafilatura`.
-  - **Threads** posts are read via their public Open Graph tags (the same
-    mechanism every app uses for link previews) — this only captures the
-    linked post's own caption, not replies, so the bot always notes that
-    limitation.
-  - **TikTok** videos (personal use only — TikTok's terms restrict automated
-    downloading) are downloaded and actually watched — Gemini
-    summarizes what's shown and said, not just the caption. This takes
-    noticeably longer (expect 30s+); the bot sends a heads-up while it
-    works.
-- **Send a file** — photos and screenshots (text is transcribed), voice
-  notes and audio (transcribed verbatim), videos (described), PDFs and
-  plain-text files (text extracted). A caption is kept as context. The
-  transcript is what gets saved, so `/search` and `/ask` can find a voice
-  note by what was said. Telegram limits bots to 20 MB downloads.
-- **Combine Mode** — if new content looks related to something already
-  saved, the bot offers to merge them into one summary instead of leaving
-  duplicates, with an optional "view first" button if you don't remember
-  the older item. It checks your 10 most recent saves plus up to 10 older
-  ones that share keywords with the new content. You can also trigger a
-  merge yourself with `/merge`.
-- **`/ask`** — answers a question using only your saved notes, citing the
-  note ids it used (e.g. `(#12)`), in the language you asked in.
-- **Titles and categories** — every save gets a short generated title (web
-  articles keep their headline) and a category. Gemini reuses your existing
-  categories and only creates a new one when nothing fits. Items saved
-  before this existed are titled and categorized by a background job.
-- **Buttons under each summary** — ✏️ Rename, 📂 Category, 📝 Note, 🗑 Delete.
-  Rename/Note/New category ask for text with a reply prompt.
-- **Weekly digest** — Sundays at 09:00 (`TIMEZONE`, default
-  `Asia/Kuala_Lumpur`): the week's saves grouped by category, plus one older
-  note to revisit. `/digest` shows it any time.
+### Saving a link
 
-Gemini calls retry temporary failures and fall back from `gemini-3.6-flash`
-to `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` (each has its own
-free-tier quota). If everything fails, the bot says why: daily quota used
-up, rate limit, rejected key, or Gemini overloaded.
+```mermaid
+sequenceDiagram
+    actor Y as You
+    participant B as Bot
+    participant V as yt-dlp
+    participant G as Gemini
+    participant D as SQLite
+    Y->>B: Instagram reel link
+    B-->>Y: "Downloading and watching this Instagram video..."
+    B->>V: download the video
+    V-->>B: mp4 + caption
+    B->>G: upload video, "describe what happens"
+    G-->>B: description
+    B->>D: load candidate notes and your categories
+    B->>G: summarize + pick title, category, related note
+    G-->>B: summary, TITLE, CATEGORY, RELATED_ID
+    B->>D: save
+    B-->>Y: title, 📂 category, summary, "Saved as #13" + buttons
+    B-->>Y: "This looks related to #4. Merge?" (if it is)
+```
 
-Every summary is saved to SQLite (`summarizer.db` by default, or `DB_PATH`),
-scoped to the Telegram user who saved it — Combine Mode's related-item
-check and every command below only ever see and act on your own items,
-never another authorized user's. Commands for managing what's saved:
+Text and articles skip the download step. Photos, voice notes and PDFs are first downloaded from Telegram and read by Gemini, then go through the same summarize step.
 
-| Command | Does |
+### Getting an answer from Gemini
+
+Every Gemini call goes through one function, `generate_text()` in `app/ai/gemini.py`, so the free tier's busy spells and quotas don't break the bot.
+
+```mermaid
+flowchart TD
+    S["Summarize / transcribe / ask / merge"] --> M1["gemini-3.6-flash"]
+    M1 -- "answer" --> OK["Use it"]
+    M1 -- "503 busy or timeout" --> R1["Retry once"]
+    R1 -- "still failing" --> M2["gemini-3.5-flash-lite"]
+    M1 -- "429 quota or 404 retired" --> M2
+    M2 -- "answer" --> OK
+    M2 -- "fails" --> M3["gemini-3.1-flash-lite"]
+    M3 -- "answer" --> OK
+    M3 -- "fails" --> E["Tell you why:<br/>quota / rate limit / bad key / busy"]
+    M1 -- "key rejected" --> E
+```
+
+Each model gets at most two tries, and every request has an overall time limit: 90 seconds for summaries, longer for reading videos and files.
+
+### Choosing related notes
+
+Comparing a new note with your whole history would make every prompt huge, so the bot sends Gemini your 10 most recent notes plus up to 10 older ones that share at least two keywords with the new content (`app/ai/related.py`; common English and Malay filler words are ignored). Gemini picks the related one, if any, in the same call that writes the summary.
+
+### Data
+
+```mermaid
+erDiagram
+    summaries {
+        int id PK
+        int user_id
+        text source "web, threads, tiktok, instagram, photo, voice, pdf..."
+        text url
+        text title
+        text author
+        text category
+        text original_text "article text, transcript or video description"
+        text summary
+        text user_note
+        text merged_from
+        text previous_summary "for /undo"
+        text created_at
+    }
+    user_settings {
+        int user_id PK
+        text gemini_api_key "optional, set with /setkey"
+    }
+```
+
+New columns are added automatically when the bot starts, so an existing `summarizer.db` keeps working after an update.
+
+## Tech stack
+
+| Part | Used for |
 |---|---|
-| `/list` | Category menu with counts; each category pages 10 at a time (`/list <category>` jumps to one) |
-| `/search <keyword>` | Search titles, summaries, original text, notes and categories |
-| `/ask <question>` | Answer a question from your saved notes, with citations |
-| `/view <id>` | Full summary for one item, with the action buttons |
-| `/rename <id> <title>` | Change an item's title |
-| `/move <id> <category>` | Move an item to another (or a new) category |
-| `/note <id> <text>` | Add your own note to an item (`/note <id> clear` removes it) |
-| `/digest` | Show the weekly digest now |
-| `/merge <keep_id> <absorb_id>` | Merge two items into one (asks for confirmation) |
-| `/delete <id>` | Delete an item (asks for confirmation) |
-| `/undo <id>` | Revert a merged item to its pre-merge summary |
-| `/export` | Download all notes: a readable Markdown file and a complete JSON backup |
-| `/setkey <api_key>` | Set your own Gemini API key (required for every invited user except the owner) |
+| [python-telegram-bot](https://python-telegram-bot.org/) | Telegram long polling, commands, inline buttons and reply prompts |
+| [Google Gemini API](https://ai.google.dev/) (`google-genai`) | Summaries, titles and categories, transcription, reading images, PDFs and videos, `/ask` |
+| SQLite (Python's built-in `sqlite3`) | Notes, categories and settings in one file |
+| [trafilatura](https://trafilatura.readthedocs.io/) | Article text from web pages |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) with `curl-cffi` | Downloading TikTok and Instagram videos |
+| [httpx](https://www.python-httpx.org/) | Fetching pages and Threads posts |
+| [pytest](https://docs.pytest.org/) | Unit tests |
+| systemd on a Linux VM | Keeping the bot running (see [DEPLOY.md](DEPLOY.md)) |
 
-Every authorized user besides the owner sees a prompt to run `/setkey` the
-first time they try to summarize anything — `/setkey` validates the key
-live before saving it, and deletes the message containing it from chat
-history afterward. Keys are stored in plain SQLite, same as everything
-else here — no encryption at rest, worth knowing if you invite people
-beyond a small trusted group.
+## One-time setup
+
+You need Python 3.10+ (64-bit) and a Telegram account.
+
+### 1. Create the bot and get the keys
+
+1. In Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`. Pick a name and username, then copy the **bot token**.
+2. Open [Google AI Studio](https://aistudio.google.com/apikey) and create an **API key**. The free tier is enough.
+3. Message [@userinfobot](https://t.me/userinfobot) to get your numeric **Telegram user ID**. The bot only answers this ID.
+
+### 2. Install
+
+```bash
+git clone https://github.com/nabilhrs/social-summary-bot.git
+cd social-summary-bot
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+```
+
+On Windows, use `py -3 -m venv venv` and `venv\Scripts\pip install -r requirements.txt`. The interpreter must be 64-bit: a dependency (`cryptography`) has no 32-bit Windows build.
+
+The install takes a little longer than usual because `yt-dlp`'s browser-impersonation extra (needed to get past TikTok's bot check) pulls in a few packages.
+
+### 3. Configure
+
+Copy `.env.example` to `.env` and fill in:
+
+```
+TELEGRAM_BOT_TOKEN=123456:ABC...
+AUTHORIZED_USER_IDS=your-telegram-user-id
+GEMINI_API_KEY=your-gemini-api-key
+```
+
+### 4. Run it
+
+```bash
+venv/bin/python main.py
+```
+
+You should see `Database: .../summarizer.db` and `Bot starting — polling for updates...`. Send `/start` to your bot.
+
+Only run one copy at a time. Telegram allows one polling connection per bot token, and a second copy makes both fail with `Conflict: terminated by other getUpdates request`.
 
 ## Hosting
 
-Running `python main.py` locally only keeps the bot online while your
-machine does. See [DEPLOY.md](DEPLOY.md) to run it continuously on a
-free-tier cloud VM (`deploy/setup.sh` + `deploy/social-summary-bot.service`
-automate everything past account creation).
+Running `main.py` on your own computer keeps the bot online only while that computer is on. [DEPLOY.md](DEPLOY.md) walks through running it on a free always-on VM (Google Cloud's free `e2-micro`, or Oracle Cloud's free tier) as a systemd service that restarts on crashes and starts on boot. `deploy/setup.sh` and `deploy/social-summary-bot.service` do everything after creating the VM.
 
-## Tests
+## Updating an existing install
 
+```bash
+cd ~/social-summary-bot
+git pull
+venv/bin/pip install -r requirements.txt   # only if requirements.txt changed
+sudo systemctl restart social-summary-bot
 ```
-venv\Scripts\pytest
+
+Database changes are applied automatically on startup. The bot also refreshes its `/` command menu every time it starts.
+
+## Configuration
+
+`.env`:
+
+- `TELEGRAM_BOT_TOKEN`: from @BotFather.
+- `AUTHORIZED_USER_IDS`: your Telegram user ID. Everyone else gets "Sorry, this bot is private."
+- `GEMINI_API_KEY`: from Google AI Studio. `/setkey` in the bot can override it with a different key.
+- `DB_PATH` (optional): where the database lives. Defaults to `summarizer.db` in the project folder.
+- `TIMEZONE` (optional): IANA timezone for the Sunday 9am digest. Defaults to `Asia/Kuala_Lumpur`.
+
+In code:
+
+- **Models:** `MODELS` in `app/ai/gemini.py`, in fallback order. If Google retires one, the bot skips it automatically (404), but replace it with a current free model from AI Studio.
+- **Digest time:** `DIGEST_WEEKDAY` and `DIGEST_HOUR` in `app/bot/digest.py`.
+- **Short-note threshold:** content under 80 words gets the compact summary (`_SHORT_CONTENT_WORD_THRESHOLD` in `app/ai/prompts.py`).
+
+## Development
+
+```bash
+venv/bin/pytest
 ```
 
-Pure logic (parsing, formatting, database queries) is unit tested.
-The Gemini retry/fallback logic is unit tested against a fake client.
-Network- and filesystem-dependent extraction (web/Threads/TikTok fetches,
-real Gemini calls) is verified live rather than mocked — see the commit history
-and [`docs/memory.md`](docs/memory.md) for what's been checked and how.
+Pure logic (parsing, formatting, database queries, the Gemini retry and fallback rules with a fake client) is unit tested. Anything that talks to Telegram, Gemini or a website is checked live instead of mocked; [docs/memory.md](docs/memory.md) records what was checked and the bugs it caught.
 
-## Project structure
+Code layout:
 
-```
-social-summary-bot/
-├── app/
-│   ├── bot/
-│   │   ├── commands.py      # slash commands
-│   │   ├── handlers.py      # message/file pipeline + merge/delete callbacks
-│   │   ├── formatting.py    # HTML rendering, error texts, keyboards
-│   │   ├── browse.py        # /list category menu and pages
-│   │   ├── actions.py       # buttons under summaries (rename/category/note/delete)
-│   │   ├── background.py    # title/category backfill job
-│   │   ├── digest.py        # weekly digest
-│   │   └── export.py        # /export file builders
-│   ├── extractors/
-│   │   ├── base.py          # URL routing, normalization
-│   │   ├── webpage.py       # generic articles (trafilatura)
-│   │   ├── threads.py       # Threads posts (Open Graph tags)
-│   │   ├── tiktok.py        # TikTok videos (yt-dlp + Gemini video understanding)
-│   │   └── media.py         # Telegram photos, voice, audio, video, documents
-│   ├── ai/
-│   │   ├── gemini.py        # every Gemini call: retries, model fallback, file uploads
-│   │   ├── summarizer.py    # summarize, merge, /ask
-│   │   ├── related.py       # Combine Mode candidate selection
-│   │   └── prompts.py
-│   ├── database/
-│   │   └── database.py
-│   └── config.py
-├── tests/
-├── deploy/
-│   ├── setup.sh                     # provisions a fresh Ubuntu VM
-│   └── social-summary-bot.service   # systemd unit for always-on running
-├── .env / .env.example
-├── requirements.txt
-└── main.py
-```
+| File | What it does |
+|---|---|
+| `main.py` | Registers handlers, the `/` menu and background jobs, starts polling |
+| `app/config.py` | Reads `.env` |
+| `app/bot/handlers.py` | Incoming text, links and files: extract, summarize, save, offer a merge |
+| `app/bot/commands.py` | Slash commands |
+| `app/bot/actions.py` | Buttons under summaries (rename, category, note, delete) and reply prompts |
+| `app/bot/browse.py` | `/list` category menu and pages |
+| `app/bot/digest.py` | Weekly digest |
+| `app/bot/background.py` | Fills in titles and categories for older notes |
+| `app/bot/export.py` | `/export` files |
+| `app/bot/formatting.py` | Telegram HTML rendering, error messages, keyboards |
+| `app/ai/gemini.py` | Every Gemini call: retries, model fallback, file uploads |
+| `app/ai/summarizer.py` | Summaries, merges, `/ask`, title and category parsing |
+| `app/ai/prompts.py` | Prompt templates |
+| `app/ai/related.py` | Picks which older notes to compare against |
+| `app/extractors/base.py` | Link routing and the shared content format |
+| `app/extractors/webpage.py` | Web articles |
+| `app/extractors/threads.py` | Threads posts |
+| `app/extractors/video_link.py` | TikTok and Instagram videos |
+| `app/extractors/media.py` | Telegram photos, voice notes, audio, video and documents |
+| `app/database/database.py` | SQLite queries and startup migrations |
+| `deploy/` | VM setup script and systemd unit |
+| `docs/` | Original specs, feature checklist and bug log |
+
+## Troubleshooting
+
+- **The bot doesn't reply.** Check the logs (`journalctl -u social-summary-bot -f` on the VM, or the terminal running `main.py`). A repeating `Conflict: terminated by other getUpdates request` means two copies are running with the same token: stop one.
+- **"Your Gemini API key has used up today's free quota".** Every model in the chain hit its daily free limit. It resets at midnight Pacific time. Each file or video uses two requests (read it, then summarize), so heavy days run out faster.
+- **"Gemini is overloaded".** Every model was busy, even after retries. Wait a few minutes.
+- **An Instagram link says it needs a login.** The post may be private or a story, or Instagram may be limiting anonymous requests from your server (cloud servers get blocked more often than home connections). Send the video file or a screenshot instead.
+- **A Threads summary is missing part of the thread.** The bot only reads the post you linked, not its replies. Paste or screenshot the rest.
+- **`pip install` fails building `cryptography` on Windows.** You're using a 32-bit Python. Install the 64-bit one and recreate the venv.
+
+## Privacy
+
+Your notes are stored in `summarizer.db` on whatever machine runs the bot, and nowhere else. Everything you send is also sent to Google Gemini to be summarized or read, and Google may use free-tier prompts to improve its products, so don't send anything confidential. Gemini API keys set with `/setkey` are stored in the database as plain text.
+
+Downloading TikTok and Instagram videos goes against those platforms' terms. This bot is meant for personal use with your own saved content.
+
+## More docs
+
+- [USER_GUIDE.md](USER_GUIDE.md): how to use the bot
+- [DEPLOY.md](DEPLOY.md): running it on a free cloud VM
+- [docs/CHECKLIST.md](docs/CHECKLIST.md): status of every feature
+- [docs/memory.md](docs/memory.md): bugs found in real use, and the lesson from each
+- [docs/summarizer_bot_prd_v1.md](docs/summarizer_bot_prd_v1.md) and [v2](docs/summarizer_bot_prd_v2.md): the original specs

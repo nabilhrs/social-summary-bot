@@ -417,3 +417,27 @@ onboarding, encrypting stored API keys) was deliberately skipped.
 ### Fixes found along the way
 - ✅ Empty `DB_PATH=` (as shipped in `.env.example`) no longer means a
   throwaway database — see `memory.md` #9
+
+## November 2026
+
+### Instagram reels and video posts
+- ✅ Instagram links (`instagram.com`, `instagr.am`) use the same yt-dlp +
+  Gemini path as TikTok, now in `app/extractors/video_link.py`
+- ✅ Carousels use their first video (`playlist_items: 1`)
+- ✅ Photo-only posts and login-walled posts (private, stories, or
+  Instagram limiting anonymous requests) get a specific reply suggesting a
+  screenshot or the video file instead
+- ✅ Verified live from a home connection without login: two public reels
+  and a multi-video post, summarized from what's in the video
+- ⚠️ Not yet verified from the cloud VM; Instagram blocks datacenter IPs
+  more often than home connections
+- ❌ No login/cookies support (would tie the bot to a personal Instagram
+  account and risk that account)
+
+### Docs
+- ✅ README rewritten in the same layout as logbook-bot (features, Mermaid
+  diagrams of the flow, fallback chain and data, tech stack, setup,
+  configuration, code layout, troubleshooting, privacy); all four diagrams
+  checked with Mermaid 11
+- ✅ New `USER_GUIDE.md`
+- ❌ No demo GIF yet
