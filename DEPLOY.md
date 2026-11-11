@@ -209,18 +209,26 @@ file off the VM (`scp ubuntu@<ip>:~/social-summary-bot/summarizer.db .`).
 
 ## Moving an existing VM to a newer Python
 
-If `yt-dlp` warns that your Python version is deprecated (Ubuntu 22.04 ships 3.10), rebuild the venv on a newer Python. Your `.env` and `summarizer.db` aren't touched:
+If `yt-dlp` warns that your Python version is deprecated (Ubuntu 22.04 ships 3.10), rebuild the venv on a newer Python. Your `.env` and `summarizer.db` aren't touched.
+
+**1. Install Python 3.12.** The bot keeps running during this step. Minimal cloud images (like Google Cloud's) don't include `add-apt-repository`, so the first command installs it:
 
 ```bash
-sudo add-apt-repository -y ppa:deadsnakes/ppa
-sudo apt-get install -y python3.12 python3.12-venv
-cd ~/social-summary-bot
-sudo systemctl stop social-summary-bot
-mv venv venv-old
-python3.12 -m venv venv
-venv/bin/pip install -r requirements.txt
-sudo systemctl start social-summary-bot
-journalctl -u social-summary-bot -n 20 --no-pager
+sudo apt-get update && sudo apt-get install -y software-properties-common && sudo add-apt-repository -y ppa:deadsnakes/ppa && sudo apt-get install -y python3.12 python3.12-venv && python3.12 --version
 ```
 
-Once the bot is working, delete the old one with `rm -rf venv-old`.
+Only continue if the last line prints `Python 3.12.x`.
+
+**2. Swap the venv.** Each step runs only if the one before it worked, so a failure never leaves the bot without a venv:
+
+```bash
+cd ~/social-summary-bot && python3.12 --version && sudo systemctl stop social-summary-bot && mv venv venv-old && python3.12 -m venv venv && venv/bin/pip install -r requirements.txt && sudo systemctl start social-summary-bot && journalctl -u social-summary-bot -n 20 --no-pager
+```
+
+**If step 2 fails partway**, put the old venv back:
+
+```bash
+cd ~/social-summary-bot && rm -rf venv && mv venv-old venv && sudo systemctl restart social-summary-bot
+```
+
+Once the bot is working on the new venv, delete the old one with `rm -rf venv-old`.

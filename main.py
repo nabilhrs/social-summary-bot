@@ -4,6 +4,7 @@ Entry point. Wires up the Telegram Application and starts polling.
 Run with: python main.py
 Requires TELEGRAM_BOT_TOKEN and AUTHORIZED_USER_IDS in .env (see .env.example).
 """
+import asyncio
 import logging
 import os
 
@@ -86,12 +87,29 @@ async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _post_init(app: Application) -> None:
     await app.bot.set_my_commands(_BOT_COMMANDS)
-    app.create_task(backfill_loop())
-    app.create_task(digest_loop(app.bot))
+    # Plain asyncio tasks, cancelled in _post_stop: Application.create_task
+    # warns when called before the app is running and leaves them pending at exit.
+    app.bot_data["background_tasks"] = [
+        asyncio.create_task(backfill_loop(), name="backfill"),
+        asyncio.create_task(digest_loop(app.bot), name="digest"),
+    ]
+
+
+async def _post_stop(app: Application) -> None:
+    tasks = app.bot_data.get("background_tasks", [])
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def build_app() -> Application:
-    app = Application.builder().token(config.telegram_bot_token).post_init(_post_init).build()
+    app = (
+        Application.builder()
+        .token(config.telegram_bot_token)
+        .post_init(_post_init)
+        .post_stop(_post_stop)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))

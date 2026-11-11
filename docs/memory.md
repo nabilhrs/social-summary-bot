@@ -241,6 +241,29 @@ startup, so a wrong location shows up in the logs.
 
 ---
 
+## 10. Python upgrade instructions took the bot offline
+
+**Symptom:** Following the "move to Python 3.12" commands on the VM left the
+bot down: systemd logged `Failed to locate executable .../venv/bin/python`.
+
+**Cause:** Two mistakes in the instructions. Google Cloud's minimal Ubuntu
+image has no `add-apt-repository` (it's in `software-properties-common`), so
+the deadsnakes PPA was never added and `python3.12` didn't install. And the
+commands were separate lines with nothing chaining them, so after that
+failure `mv venv venv-old` still ran, with no new venv to replace it.
+
+**Fix:** Restored with `mv venv-old venv`. `DEPLOY.md` now installs
+`software-properties-common` first, and runs the swap as one `&&` chain that
+starts by checking `python3.12 --version`, so a failure stops before
+anything is moved. It also includes a rollback command.
+
+**Lesson:** Any instructions that stop a service or move something it needs
+must be one `&&` chain behind a check that the replacement exists, never
+separate lines run in order. Assume cloud images are minimal: install the
+tool you use (`software-properties-common`) instead of assuming it's there.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The

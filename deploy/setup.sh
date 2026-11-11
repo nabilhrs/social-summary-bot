@@ -14,7 +14,7 @@ sudo apt-get install -y python3 python3-venv python3-pip git build-essential
 PYTHON=$(command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3)
 if ! "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
     echo "==> WARNING: $("$PYTHON" --version) is older than 3.11; yt-dlp is dropping support for it."
-    echo "    On Ubuntu 22.04: sudo add-apt-repository -y ppa:deadsnakes/ppa && sudo apt-get install -y python3.12 python3.12-venv"
+    echo "    On Ubuntu 22.04: sudo apt-get install -y software-properties-common && sudo add-apt-repository -y ppa:deadsnakes/ppa && sudo apt-get install -y python3.12 python3.12-venv"
     echo "    then delete venv/ and run this script again."
 fi
 
