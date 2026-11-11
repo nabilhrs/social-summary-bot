@@ -37,7 +37,7 @@ option if OCI keeps returning capacity errors:
    Free eligibility is locked to these three. Zone within the region
    doesn't matter.
 6. **Machine type:** `e2-micro` (under the E2 series).
-7. **Boot disk:** click Change, pick Ubuntu 22.04 or 24.04 LTS, keep the
+7. **Boot disk:** click Change, pick Ubuntu 24.04 LTS (its Python 3.12 is what yt-dlp wants; 22.04 ships 3.10), keep the
    disk at or under 30GB (the default 10GB is fine) to stay in the free
    tier.
 8. Leave firewall/networking at their defaults — the bot only makes
@@ -79,7 +79,7 @@ here incur no charge as long as you stay within the free-tier shapes below.
 
 From the OCI console: **Compute → Instances → Create Instance**.
 
-- **Image:** Ubuntu (22.04 or 24.04 LTS)
+- **Image:** Ubuntu 24.04 LTS (22.04 works, but its Python 3.10 is being dropped by yt-dlp)
 - **Shape:** two options are Always Free-eligible:
   - `VM.Standard.E2.1.Micro` (AMD, x86) — smaller (1/8 OCPU, 1GB RAM), but
     reliably available and plenty for this bot, which is mostly waiting on
@@ -206,3 +206,21 @@ file off the VM (`scp ubuntu@<ip>:~/social-summary-bot/summarizer.db .`).
 | `sudo systemctl stop social-summary-bot` | Stop it |
 | `journalctl -u social-summary-bot -f` | Follow live logs |
 | `journalctl -u social-summary-bot -n 100` | Last 100 log lines |
+
+## Moving an existing VM to a newer Python
+
+If `yt-dlp` warns that your Python version is deprecated (Ubuntu 22.04 ships 3.10), rebuild the venv on a newer Python. Your `.env` and `summarizer.db` aren't touched:
+
+```bash
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt-get install -y python3.12 python3.12-venv
+cd ~/social-summary-bot
+sudo systemctl stop social-summary-bot
+mv venv venv-old
+python3.12 -m venv venv
+venv/bin/pip install -r requirements.txt
+sudo systemctl start social-summary-bot
+journalctl -u social-summary-bot -n 20 --no-pager
+```
+
+Once the bot is working, delete the old one with `rm -rf venv-old`.

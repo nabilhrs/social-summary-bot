@@ -127,7 +127,7 @@ New columns are added automatically when the bot starts, so an existing `summari
 
 ## One-time setup
 
-You need Python 3.10+ (64-bit) and a Telegram account.
+You need Python 3.11+ (64-bit) and a Telegram account. 3.10 still runs, but yt-dlp is dropping support for it, and TikTok and Instagram regularly need newer yt-dlp releases.
 
 ### 1. Create the bot and get the keys
 
