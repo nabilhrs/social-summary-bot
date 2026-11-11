@@ -42,7 +42,7 @@ from app.bot.formatting import (
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
-    "Send me a link (articles, Threads posts, TikTok videos), paste text, or "
+    "Send me a link (articles, Threads posts, TikTok or Instagram videos), paste text, or "
     "send a photo, screenshot, voice note, video, or PDF — I'll send back a "
     "summary and save it. If something looks related to an earlier save, I'll "
     "offer to merge them.\n\n"
@@ -52,9 +52,9 @@ WELCOME_TEXT = (
 
 HELP_TEXT = (
     "*What I can do*\n\n"
-    "• Send a URL — articles, Threads posts, or TikTok videos — and I'll "
-    "extract and summarize it. TikTok videos take longer since I actually "
-    "download and watch them.\n"
+    "• Send a URL — articles, Threads posts, TikTok videos, or Instagram "
+    "reels and video posts — and I'll extract and summarize it. Videos take "
+    "longer since I actually download and watch them.\n"
     "• Send pasted text — I'll summarize it directly.\n"
     "• Send a photo or screenshot, voice note, audio, video, or a PDF/text "
     "file — I'll transcribe or read it first, then summarize. A caption is "

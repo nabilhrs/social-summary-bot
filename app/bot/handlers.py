@@ -14,18 +14,19 @@ from telegram.ext import ContextTypes
 
 from app.config import config
 from app.extractors.base import (
+    VIDEO_PLATFORM_NAMES,
     looks_like_url,
     detect_unsupported_platform,
     is_threads_url,
-    is_tiktok_url,
     normalize_pasted_text,
     normalize_web_article,
     normalize_threads_post,
-    normalize_tiktok_video,
+    normalize_video_post,
+    video_platform,
 )
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
-from app.extractors.tiktok import fetch_and_extract as fetch_tiktok_video
+from app.extractors.video_link import NO_VIDEO, VideoUnavailable, fetch_and_extract as fetch_video_link
 from app.extractors.media import (
     AUDIO,
     IMAGE,
@@ -73,7 +74,20 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "{platform} doesn't allow me to pull post content automatically. "
     "Please paste the text here and I'll summarize it."
 )
-TIKTOK_PROCESSING_TEXT = "🎥 Downloading and analyzing this TikTok video — this may take a moment..."
+VIDEO_PROCESSING_TEXT = "🎥 Downloading and watching this {platform} video — this may take a moment..."
+VIDEO_FAILED_TEXT = (
+    "I couldn't download that {platform} video. You can send me the video file itself, "
+    "or a screenshot, and I'll summarize that instead."
+)
+NO_VIDEO_TEXT = (
+    "That {platform} post has no video I can watch. For photo posts, send me a "
+    "screenshot and I'll read it."
+)
+LOGIN_REQUIRED_TEXT = (
+    "{platform} wouldn't show me that post without logging in. It may be private or a "
+    "story, or {platform} may be limiting requests from my server. Send me the video "
+    "file or a screenshot instead."
+)
 MEDIA_PROCESSING_TEXTS = {
     IMAGE: "🖼️ Reading your image...",
     AUDIO: "🎙️ Transcribing your audio — this may take a moment...",
@@ -123,8 +137,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if await apply_reply_edit(message, user.id):
         return
 
-    # Resolved before any extraction work — no point downloading a TikTok
-    # video (the slowest, most expensive path) only to fail at the
+    # Resolved before any extraction work — no point downloading a video
+    # (the slowest, most expensive path) only to fail at the
     # summarize step for lack of a key.
     api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
     if api_key is None:
@@ -139,17 +153,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
             return
 
-        if is_tiktok_url(raw_text):
-            await message.reply_text(TIKTOK_PROCESSING_TEXT)
+        video_source = video_platform(raw_text)
+        if video_source is not None:
+            name = VIDEO_PLATFORM_NAMES[video_source]
+            await message.reply_text(VIDEO_PROCESSING_TEXT.format(platform=name))
             try:
-                extracted = await fetch_tiktok_video(raw_text, api_key)
+                extracted = await fetch_video_link(raw_text, api_key)
             except GeminiError as exc:
                 await message.reply_text(gemini_error_text(exc))
                 return
-            if extracted is None:
-                await message.reply_text(EXTRACTION_FAILED_TEXT)
+            except VideoUnavailable as exc:
+                text = NO_VIDEO_TEXT if exc.reason == NO_VIDEO else LOGIN_REQUIRED_TEXT
+                await message.reply_text(text.format(platform=name))
                 return
-            content = normalize_tiktok_video(raw_text, extracted)
+            if extracted is None:
+                await message.reply_text(VIDEO_FAILED_TEXT.format(platform=name))
+                return
+            content = normalize_video_post(raw_text, extracted, video_source)
         elif is_threads_url(raw_text):
             extracted = await fetch_threads_post(raw_text)
             if extracted is None:

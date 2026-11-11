@@ -1,19 +1,14 @@
 """
-TikTok video extraction (PRD V2 TikTok revision).
+Video links (TikTok, Instagram Reels and video posts): download the video
+with yt-dlp and have Gemini describe what's actually shown and said. The
+caption alone is often minimal or missing.
 
-Downloads the video via yt-dlp and asks Gemini to describe its actual
-content (visuals + speech) — the caption alone is often minimal or
-missing, and the point is to summarize the video itself, not just
-whatever text the poster typed.
-
-TikTok's terms restrict automated downloading, so this extractor 
-is meant for personal use only (see the README). yt-dlp's curl-cffi 
-"impersonation" extra is required: without it, TikTok answers with a 
-JS challenge page instead of the video.
-
-PRD V2 per-user key revision: takes the caller's own resolved Gemini API
-key rather than a fixed client — video calls are the most expensive kind,
-which is exactly why per-user keys exist.
+TikTok's and Instagram's terms restrict automated downloading, so this is
+meant for personal use only (see the README). yt-dlp's curl-cffi
+"impersonation" extra is required: without it, TikTok answers with a JS
+challenge page instead of the video. Instagram serves public reels without
+a login, but often refuses requests from cloud servers or after many
+anonymous requests; those failures are reported as LOGIN_REQUIRED.
 """
 import asyncio
 import logging
@@ -31,6 +26,27 @@ _OVERALL_TIMEOUT_SECONDS = 240
 _DESCRIBE_TIMEOUT_SECONDS = 60
 _DESCRIBE_DEADLINE_SECONDS = 100
 _MAX_FILESIZE_BYTES = 200 * 1024 * 1024
+
+NO_VIDEO = "no_video"
+LOGIN_REQUIRED = "login_required"
+_LOGIN_MARKERS = ("--cookies", "registered users", "log in", "login", "rate-limit", "empty media response")
+
+
+class VideoUnavailable(Exception):
+    """yt-dlp couldn't get a video for a reason worth telling the user."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def classify_download_error(message: str) -> str | None:
+    lowered = message.lower()
+    if "there is no video in this post" in lowered:
+        return NO_VIDEO
+    if any(marker in lowered for marker in _LOGIN_MARKERS):
+        return LOGIN_REQUIRED
+    return None
 
 
 def _build_text(description: str, caption: str | None) -> str:
@@ -51,10 +67,18 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
             "outtmpl": os.path.join(tmp_dir, "%(id)s.%(ext)s"),
             "format": "mp4/best",
             "max_filesize": _MAX_FILESIZE_BYTES,
+            # An Instagram carousel is a playlist; only its first video is summarized.
+            "playlist_items": "1",
         }
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as exc:
+            reason = classify_download_error(str(exc))
+            logger.warning("yt-dlp couldn't fetch %s (%s): %s", url, reason, exc)
+            if reason:
+                raise VideoUnavailable(reason) from exc
+            return None
         except Exception:
             logger.exception("yt-dlp failed for %s", url)
             return None
@@ -79,19 +103,21 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
             logger.exception("Gemini video description failed for %s", url)
             return None
 
-    author = info.get("uploader") or info.get("creator")
-    caption = (info.get("description") or "").strip() or None
+    entry = (info.get("entries") or [info])[0] or info
+    author = info.get("uploader") or entry.get("uploader") or entry.get("creator") or entry.get("channel")
+    caption = (info.get("description") or entry.get("description") or "").strip() or None
     return {"author": author, "text": _build_text(description, caption)}
 
 
 async def fetch_and_extract(url: str, api_key: str) -> dict | None:
-    """Returns None if the video couldn't be downloaded or processed;
-    raises GeminiError if Gemini itself refused (quota, bad key, overload)."""
+    """Returns None if the video couldn't be downloaded or processed. Raises
+    VideoUnavailable for a post with no video or one behind a login, and
+    GeminiError if Gemini itself refused (quota, bad key, overload)."""
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(_download_and_describe, url, api_key),
             timeout=_OVERALL_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
-        logger.error("TikTok video processing timed out after %ss for %s", _OVERALL_TIMEOUT_SECONDS, url)
+        logger.error("Video processing timed out after %ss for %s", _OVERALL_TIMEOUT_SECONDS, url)
         return None

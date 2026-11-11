@@ -15,14 +15,23 @@ def looks_like_url(text: str) -> bool:
 # PRD V2 2.1 — platforms with no way to get post content without violating
 # their terms or scraping a private API. Detected up front so we skip a
 # doomed fetch and give an honest, platform-specific fallback instead of a
-# generic one. Currently empty: Threads (Open Graph tags) and TikTok (yt-dlp
-# video download, personal use only — see the README) both got real
+# generic one. Currently empty: Threads (Open Graph tags), TikTok and
+# Instagram (yt-dlp video download, personal use only — see the README) got real
 # extraction instead. Kept as an extensibility point for a future platform
 # that turns out to have no viable path at all.
 _UNSUPPORTED_PLATFORM_DOMAINS: dict[str, str] = {}
 
 _THREADS_DOMAINS = ("threads.net", "threads.com")
-_TIKTOK_DOMAINS = ("tiktok.com",)
+# Video platforms handled by app/extractors/video_link.py, keyed by source name.
+_VIDEO_PLATFORM_DOMAINS = {
+    "tiktok": ("tiktok.com",),
+    "instagram": ("instagram.com", "instagr.am"),
+}
+VIDEO_PLATFORM_NAMES = {"tiktok": "TikTok", "instagram": "Instagram"}
+
+
+def _matches(hostname: str, domains: tuple[str, ...]) -> bool:
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in domains)
 
 
 def detect_unsupported_platform(url: str) -> str | None:
@@ -34,13 +43,16 @@ def detect_unsupported_platform(url: str) -> str | None:
 
 
 def is_threads_url(url: str) -> bool:
-    hostname = (urlparse(url).hostname or "").lower()
-    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in _THREADS_DOMAINS)
+    return _matches((urlparse(url).hostname or "").lower(), _THREADS_DOMAINS)
 
 
-def is_tiktok_url(url: str) -> bool:
+def video_platform(url: str) -> str | None:
+    """"tiktok" or "instagram" for a link to one of those platforms, else None."""
     hostname = (urlparse(url).hostname or "").lower()
-    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in _TIKTOK_DOMAINS)
+    for platform, domains in _VIDEO_PLATFORM_DOMAINS.items():
+        if _matches(hostname, domains):
+            return platform
+    return None
 
 
 def normalize_pasted_text(text: str) -> dict:
@@ -73,11 +85,11 @@ def normalize_threads_post(url: str, extracted: dict) -> dict:
     }
 
 
-def normalize_tiktok_video(url: str, extracted: dict) -> dict:
+def normalize_video_post(url: str, extracted: dict, platform: str) -> dict:
     return {
         "title": None,
         "author": extracted.get("author"),
-        "source": "tiktok",
+        "source": platform,
         "url": url,
         "text": extracted["text"],
     }
