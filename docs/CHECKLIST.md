@@ -463,3 +463,20 @@ onboarding, encrypting stored API keys) was deliberately skipped.
   Telegram message
 - ⚠️ Telegram rendering of the collapsed quote and the edit round trip not
   yet checked in the real app
+
+## Feature batch 1 (#1, #2, #6, #8)
+
+- ✅ **YouTube links** (watch, youtu.be, Shorts, live, embed): Gemini
+  watches the video from the URL (`FileData`), at low media resolution;
+  title and channel from YouTube's oEmbed. Verified live with all three
+  models in the chain and end to end (about 10 s for a 3-minute video)
+- ✅ **"Already saved" check**: links are compared by `link_key()`
+  (tracking parameters, www./m. and trailing slashes ignored; YouTube by
+  video id) before any Gemini call. View / Save again buttons; Save again
+  re-reads the link stored on the existing item (no state kept)
+- ⚠️ Short links (vt.tiktok.com/…) aren't resolved, so a short link and the
+  full link to the same video aren't recognised as the same
+- ✅ **Automatic backups**: the scheduled Sunday digest also sends the
+  complete JSON backup (not on manual `/digest`)
+- ✅ **Favourites**: ⭐ Star button (toggles in place), `/starred`, a
+  Starred entry in the `/list` menu, ⭐ in list lines, starred in exports

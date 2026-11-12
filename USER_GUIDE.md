@@ -17,6 +17,7 @@ Open your bot in Telegram and tap **Start** (or send `/start`). That's it: there
 | **Text** | Summarized as-is. Forwarded messages work too. |
 | **A web article link** | The article text is pulled from the page and summarized. |
 | **A Threads post link** | The post's own text is summarized. Replies in the thread aren't visible to the bot, so it reminds you to paste the rest if you want it included. |
+| **A YouTube link** (videos, Shorts, live replays) | Gemini watches the video straight from YouTube and you get a summary of what it covers, under the video's real title. Longer videos take longer. Private and age-restricted videos can't be watched. |
 | **A TikTok link** | The video is downloaded and watched: you get a summary of what's shown and said, plus the caption. Takes 30 seconds or more. |
 | **An Instagram reel or video post link** | Same as TikTok. For a post with several videos, the first one is used. |
 | **An Instagram photo post link** | The photos (up to 10 in a carousel) are read: any text in them is transcribed and the rest described, then summarized together with the caption. |
@@ -27,20 +28,22 @@ Open your bot in Telegram and tap **Start** (or send `/start`). That's it: there
 
 Add a caption to a file ("recipe to try", "for the Friday meeting") and the bot keeps it as context. Files can be up to 20 MB, which is Telegram's limit for bots.
 
+**Already saved?** If you send a link you saved before, the bot replies **📌 Already saved as #41** instead of summarizing it again, so no quota is spent. It recognises the same link even with a different share suffix (like `?igsh=...` or `?si=...`). Tap **👀 View #41** to see it, or **🔄 Save again** if you want a fresh copy anyway.
+
 ---
 
 ## 3. What you get back
 
 Every reply has:
 
-- A **title** in bold. Web articles keep their own headline; everything else gets a short one written for it.
+- A **title** in bold. Web articles and YouTube videos keep their own title; everything else gets a short one written for it.
 - A **📂 category**, like Career or Food & Drink.
 - The **summary**. Short notes (under about 80 words) get one or two sentences. Longer content gets:
   - **TL;DR:** the gist in one or two sentences
   - **KEY POINTS:** 3 to 6 bullets
   - **TAKEAWAY:** one sentence
 - **Saved as #13**: the note's number, which commands like `/view 13` use.
-- Four buttons: **✏️ Rename**, **📂 Category**, **📝 Note**, **🗑 Delete**.
+- Buttons: **✏️ Rename**, **📂 Category**, **📝 Note**, **⭐ Star**, **🗑 Delete** (plus **🎙 Edit transcript** for voice notes and audio).
 
 ---
 
@@ -51,6 +54,7 @@ Use the buttons under the summary (or under `/view <id>`):
 - **✏️ Rename:** the bot asks for a new title. Reply to that message with it.
 - **📂 Category:** pick one of your categories, or tap **➕ New category** and reply with a name.
 - **📝 Note:** reply with your own thoughts ("tried this, works", "ask Sarah about it"). Notes add up, so you can add more later.
+- **⭐ Star:** marks the note as a favourite (tap again to unstar). See them all with `/starred`.
 - **🗑 Delete:** asks you to confirm first. This can't be undone.
 - **🎙 Edit transcript** (voice notes and audio only): the bot sends what it heard as text you can tap to copy. Paste it into a reply, fix the misheard words, and send it. The bot saves the corrected transcript and rewrites the summary and title from it, keeping the same number and category. You can also check what it heard any time under **🎙 What I heard** in the summary (tap to expand).
 
@@ -77,6 +81,8 @@ You can also merge any two notes yourself: `/merge 4 13` keeps #4 and folds #13 
 ## 6. Finding things later
 
 **Browse:** `/list` shows your categories with how many notes each has. Tap one to see its notes 10 at a time, with **◀ Prev** and **Next ▶**. `/list career` jumps straight to a category. Tap **📚 Categories** to go back.
+
+**Favourites:** `/starred` lists the notes you've starred, and they also get their own **⭐ Starred** entry in the `/list` menu. Starred notes show a ⭐ in every list.
 
 **Search:** `/search interview` finds notes with that word in the title, summary, original text, your notes or the category.
 
@@ -105,10 +111,12 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ## 8. Backing up
 
-Send `/export` and the bot sends two files:
+**Automatic:** every Sunday, right after the digest, the bot sends `notes-backup-<date>.json`, a complete copy of all your notes. Keep it (Telegram keeps it in the chat too), and your notes never live only on the server.
+
+**Any time:** send `/export` and the bot sends two files:
 
 - `notes-<date>.md`: every note with its title, category, summary, your notes and the original text. Easy to read on any device.
-- `notes-backup-<date>.json`: everything, field by field. Keep this one as your backup.
+- `notes-backup-<date>.json`: everything, field by field.
 
 ---
 
@@ -131,6 +139,7 @@ Send `/export` and the bot sends two files:
 |---|---|
 | *(any text, link or file)* | Summarizes and saves it |
 | `/list` · `/list <category>` | Browse by category |
+| `/starred` | Your starred notes |
 | `/search <word>` | Search everything you've saved |
 | `/ask <question>` | Answer from your notes, with note numbers |
 | `/view <id>` | Show one note in full, with its buttons |
@@ -159,7 +168,10 @@ If the bot says it needs a login, the post is private, a story, or Instagram is 
 Tap **📂 Category** under the summary, or send `/move <id> <category>`.
 
 **I sent the same thing twice.**
-The bot usually notices and offers a merge. Otherwise, delete one with `/delete <id>`.
+For links, the bot catches it before doing any work and replies "Already saved". For text, files and photos it usually notices and offers a merge. Otherwise, delete one with `/delete <id>`.
+
+**A YouTube video didn't work.**
+Gemini can only watch public videos. Private, members-only and age-restricted videos fail, and very long ones (several hours) can be too much for one request.
 
 **Can I use it in Malay?**
 Yes. Notes, voice notes, questions and searches all work in Malay, English or a mix of both.

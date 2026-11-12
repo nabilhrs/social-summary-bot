@@ -4,18 +4,19 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 
 ## Features
 
-- **Send almost anything.** A link (web article, Threads post, TikTok video, Instagram reel or photo post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
-- **Videos are actually watched.** TikTok and Instagram videos are downloaded and Gemini describes what's shown and said, not just the caption. Instagram photo posts (up to 10 photos) have their text transcribed and contents described, together with the caption.
+- **Send almost anything.** A link (web article, YouTube video, Threads post, TikTok video, Instagram reel or photo post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
+- **Videos are actually watched.** Gemini watches YouTube videos straight from the link, and TikTok and Instagram videos are downloaded first; either way you get what's shown and said, not just the caption. Instagram photo posts (up to 10 photos) have their text transcribed and contents described, together with the caption.
 - **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said.
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
-- **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note and 🗑 Delete buttons.
+- **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star and 🗑 Delete buttons. `/starred` lists your favourites.
+- **Never summarizes the same link twice.** A link you've already saved (even with a different share suffix) gets "Already saved as #41" instead of spending Gemini quota, with buttons to view it or save it again.
 - **Correct what it heard.** Voice note and audio summaries show the transcript (tap to expand) and a 🎙 Edit transcript button: send back the corrected text and the summary and title are rewritten from it.
 - **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
 - **Browse by category.** `/list` shows your categories with counts, and each one pages through 10 notes at a time.
 - **Ask your notes.** `/ask` answers a question using only what you've saved, and cites the notes it used, e.g. `(#12)`. It answers in the language you ask in.
 - **Weekly digest.** Every Sunday at 9am, the week's saves grouped by category plus one older note to revisit.
-- **Your data, exportable.** `/export` sends a readable Markdown file and a complete JSON backup.
+- **Your data, backed up.** The Sunday digest comes with a complete JSON backup, and `/export` sends a readable Markdown file plus the backup any time.
 - **Keeps working when Gemini is busy.** Temporary errors are retried, and the bot falls back to lighter models, each with its own free quota. If everything fails, it tells you why: daily quota used up, rate limit, rejected key or overloaded.
 
 How to use the bot: see [USER_GUIDE.md](USER_GUIDE.md).
@@ -31,7 +32,7 @@ flowchart LR
     B -- "articles" --> TR["trafilatura"]
     B -- "Threads posts" --> OG["Open Graph tags"]
     B -- "TikTok / Instagram" --> YT["yt-dlp"]
-    B -- "summaries, transcripts,<br/>video and image reading" --> G["Google Gemini<br/>main model + fallbacks"]
+    B -- "summaries, transcripts,<br/>video and image reading,<br/>YouTube links" --> G["Google Gemini<br/>main model + fallbacks"]
     J["Background jobs<br/>title/category backfill, Sunday digest"] --> B
 ```
 
@@ -230,6 +231,7 @@ Code layout:
 | `app/extractors/webpage.py` | Web articles |
 | `app/extractors/threads.py` | Threads posts |
 | `app/extractors/video_link.py` | TikTok and Instagram posts (videos and photo posts) |
+| `app/extractors/youtube.py` | YouTube videos, watched by Gemini from the link |
 | `app/extractors/media.py` | Telegram photos, voice notes, audio, video and documents |
 | `app/database/database.py` | SQLite queries and startup migrations |
 | `deploy/` | VM setup script and systemd unit |
