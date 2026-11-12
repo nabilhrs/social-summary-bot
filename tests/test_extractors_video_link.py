@@ -31,3 +31,46 @@ def test_classify_instagram_login_walls():
 
 def test_classify_other_errors_as_unknown():
     assert classify_download_error("ERROR: Unable to download webpage: HTTP Error 404") is None
+
+
+def _video(**extra):
+    return {"formats": [{"vcodec": "h264"}], "thumbnails": [{"url": "v-thumb"}], **extra}
+
+
+def _photo(name, **extra):
+    return {"formats": [], "thumbnails": [{"url": f"{name}-small"}, {"url": f"{name}-original"}], **extra}
+
+
+def test_classify_single_photo_post_uses_best_thumbnail():
+    from app.extractors.video_link import classify_post
+
+    assert classify_post(_photo("a")) == ("images", ["a-original"])
+
+
+def test_classify_photo_carousel_keeps_order_and_skips_videos():
+    from app.extractors.video_link import classify_post
+
+    info = {"_type": "playlist", "entries": [_photo("a"), _video(), _photo("b")]}
+    assert classify_post(info) == ("images", ["a-original", "b-original"])
+
+
+def test_classify_post_starting_with_video_is_a_video():
+    from app.extractors.video_link import classify_post
+
+    assert classify_post(_video()) == ("video", [])
+    assert classify_post({"entries": [_video(), _photo("a")]}) == ("video", [])
+
+
+def test_classify_caps_images_and_handles_empty_posts():
+    from app.extractors.video_link import _MAX_IMAGES, classify_post
+
+    many = {"entries": [_photo(str(i)) for i in range(_MAX_IMAGES + 5)]}
+    assert len(classify_post(many)[1]) == _MAX_IMAGES
+    assert classify_post({"formats": [], "thumbnails": []}) == ("none", [])
+    assert classify_post({"entries": []}) == ("none", [])
+
+
+def test_classify_falls_back_to_single_thumbnail_field():
+    from app.extractors.video_link import classify_post
+
+    assert classify_post({"formats": [], "thumbnail": "only"}) == ("images", ["only"])

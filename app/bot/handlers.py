@@ -74,14 +74,14 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "{platform} doesn't allow me to pull post content automatically. "
     "Please paste the text here and I'll summarize it."
 )
-VIDEO_PROCESSING_TEXT = "🎥 Downloading and watching this {platform} video — this may take a moment..."
+VIDEO_PROCESSING_TEXT = "🎥 Downloading this {platform} post — videos take a moment..."
 VIDEO_FAILED_TEXT = (
-    "I couldn't download that {platform} video. You can send me the video file itself, "
+    "I couldn't download that {platform} post. You can send me the video file itself, "
     "or a screenshot, and I'll summarize that instead."
 )
 NO_VIDEO_TEXT = (
-    "That {platform} post has no video I can watch. For photo posts, send me a "
-    "screenshot and I'll read it."
+    "I couldn't find a video or photos in that {platform} post. Send me a "
+    "screenshot and I'll read it instead."
 )
 LOGIN_REQUIRED_TEXT = (
     "{platform} wouldn't show me that post without logging in. It may be private or a "
