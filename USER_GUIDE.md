@@ -52,6 +52,7 @@ Use the buttons under the summary (or under `/view <id>`):
 - **📂 Category:** pick one of your categories, or tap **➕ New category** and reply with a name.
 - **📝 Note:** reply with your own thoughts ("tried this, works", "ask Sarah about it"). Notes add up, so you can add more later.
 - **🗑 Delete:** asks you to confirm first. This can't be undone.
+- **🎙 Edit transcript** (voice notes and audio only): the bot sends what it heard as text you can tap to copy. Paste it into a reply, fix the misheard words, and send it. The bot saves the corrected transcript and rewrites the summary and title from it, keeping the same number and category. You can also check what it heard any time under **🎙 What I heard** in the summary (tap to expand).
 
 The same things work as commands: `/rename 13 Better title`, `/move 13 Travel`, `/note 13 your note` (`/note 13 clear` removes it), `/delete 13`.
 

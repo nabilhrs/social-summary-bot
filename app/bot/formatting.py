@@ -105,7 +105,21 @@ def _escape(value) -> str:
     return html.escape(str(value), quote=False)
 
 
-def format_saved_summary(item_id: int | None, title: str | None, category: str | None, summary: str) -> str:
+# Sources whose original text is a speech transcript the user can correct.
+TRANSCRIBED_SOURCES = ("voice", "audio")
+_MAX_SHOWN_TRANSCRIPT = 1500
+
+
+def transcript_block(text: str) -> str:
+    """A collapsed (tap to expand) quote with the transcript, trimmed so the
+    whole message stays under Telegram's 4096-character limit."""
+    shown = text if len(text) <= _MAX_SHOWN_TRANSCRIPT else text[:_MAX_SHOWN_TRANSCRIPT].rstrip() + "…"
+    return f"<b>🎙 What I heard:</b>\n<blockquote expandable>{_escape(shown)}</blockquote>"
+
+
+def format_saved_summary(
+    item_id: int | None, title: str | None, category: str | None, summary: str, transcript: str | None = None
+) -> str:
     """Telegram HTML for the reply right after something is saved."""
     lines = []
     if title:
@@ -115,6 +129,8 @@ def format_saved_summary(item_id: int | None, title: str | None, category: str |
     if lines:
         lines.append("")
     lines.append(render_summary_html(summary))
+    if transcript:
+        lines += ["", transcript_block(transcript)]
     lines.append("")
     lines.append(f"<i>Saved as #{item_id}</i>" if item_id else "<i>⚠️ Couldn't save this one.</i>")
     return "\n".join(lines)
@@ -134,6 +150,8 @@ def format_full_item(item: dict) -> str:
         lines.append(f"Merged from: {escape(merged_ids)}")
     lines.append("")
     lines.append(render_summary_html(item["summary"]))
+    if item.get("source") in TRANSCRIBED_SOURCES:
+        lines += ["", transcript_block(item["original_text"])]
     if item.get("user_note"):
         lines += ["", "<b>📝 Your note:</b>", escape(item["user_note"])]
     return "\n".join(lines)

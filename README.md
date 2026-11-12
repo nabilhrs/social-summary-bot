@@ -10,6 +10,7 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
 - **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note and 🗑 Delete buttons.
+- **Correct what it heard.** Voice note and audio summaries show the transcript (tap to expand) and a 🎙 Edit transcript button: send back the corrected text and the summary and title are rewritten from it.
 - **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
 - **Browse by category.** `/list` shows your categories with counts, and each one pages through 10 notes at a time.
 - **Ask your notes.** `/ask` answers a question using only what you've saved, and cites the notes it used, e.g. `(#12)`. It answers in the language you ask in.

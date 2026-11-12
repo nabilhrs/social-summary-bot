@@ -33,3 +33,14 @@ def test_background_tasks_start_on_init_and_are_cancelled_on_stop(monkeypatch):
 
 def test_post_stop_without_tasks_is_a_no_op():
     asyncio.run(main._post_stop(SimpleNamespace(bot_data={})))
+
+
+def test_action_button_pattern_covers_every_action():
+    import re
+
+    pattern = next(
+        h.pattern.pattern for handlers in main.build_app().handlers.values() for h in handlers
+        if getattr(h, "callback", None) is main.handle_action_callback
+    )
+    for action in ("rename", "cat", "newcat", "note", "transcript"):
+        assert re.match(pattern, f"act:{action}:12")

@@ -101,3 +101,93 @@ def test_reply_to_note_prompt_appends_note(item_id):
         message = _FakeMessage(text, _prompt(NOTE_PROMPT.format(id=item_id)))
         assert asyncio.run(apply_reply_edit(message, USER)) is True
     assert database.get_by_id(item_id, USER)["user_note"] == "try this weekend\nworked well"
+
+
+def test_voice_items_get_an_edit_transcript_button_first():
+    data = [b.callback_data for b in _buttons(build_item_actions_keyboard(7, "voice"))]
+    assert data[0] == "act:transcript:7"
+    assert "act:transcript:7" not in [b.callback_data for b in _buttons(build_item_actions_keyboard(7, "web"))]
+
+
+def test_parse_transcript_prompt_with_text_after_the_first_line():
+    from app.bot.actions import TRANSCRIPT_PROMPT
+
+    prompt = TRANSCRIPT_PROMPT.format(id=9) + "\n\nTap the text below to copy it...\n\nold transcript"
+    assert parse_reply_prompt(prompt) == ("transcript", 9)
+
+
+class _FakeChat:
+    async def send_action(self, action):
+        pass
+
+
+class _VoiceReply(_FakeMessage):
+    def __init__(self, text, reply_to):
+        super().__init__(text, reply_to)
+        self.chat = _FakeChat()
+
+    async def reply_text(self, text, **kwargs):
+        self.replies.append(text)
+
+
+@pytest.fixture
+def voice_item(tmp_path, monkeypatch):
+    monkeypatch.setattr(database.config, "db_path", str(tmp_path / "v.db"))
+    database.init_db()
+    content = {"title": "Pitch Plan", "author": None, "source": "voice", "url": None, "text": "open with the costumer story"}
+    return database.save_summary(content, "SUMMARY: old", USER, category="Career")
+
+
+def _transcript_reply(item_id, text):
+    from app.bot.actions import TRANSCRIPT_PROMPT
+
+    return _VoiceReply(text, _prompt(TRANSCRIPT_PROMPT.format(id=item_id) + "\n\nold"))
+
+
+def test_corrected_transcript_rewrites_summary_and_title_but_keeps_category(voice_item, monkeypatch):
+    from app.ai.summarizer import Summary
+    from app.bot import actions
+
+    seen = {}
+
+    async def fake_summarize(content, recent, api_key, categories):
+        seen["text"] = content["text"]
+        return Summary(text="SUMMARY: new", title="Customer Story Pitch", category="Ignored")
+
+    async_key = lambda user_id: "key"  # noqa: E731
+    monkeypatch.setattr(actions, "summarize", fake_summarize)
+    monkeypatch.setattr(actions, "resolve_gemini_api_key", async_key)
+
+    message = _transcript_reply(voice_item, "  open with the customer story  ")
+    assert asyncio.run(apply_reply_edit(message, USER)) is True
+
+    row = database.get_by_id(voice_item, USER)
+    assert seen["text"] == "open with the customer story"
+    assert (row["original_text"], row["summary"], row["title"], row["category"]) == (
+        "open with the customer story", "SUMMARY: new", "Customer Story Pitch", "Career",
+    )
+    assert message.replies[0].startswith("✅ Transcript updated")
+
+
+def test_transcript_is_saved_even_when_gemini_fails(voice_item, monkeypatch):
+    from app.ai.gemini import QUOTA_DAILY, GeminiError
+    from app.bot import actions
+
+    async def failing_summarize(*args):
+        raise GeminiError(QUOTA_DAILY)
+
+    monkeypatch.setattr(actions, "summarize", failing_summarize)
+    monkeypatch.setattr(actions, "resolve_gemini_api_key", lambda user_id: "key")
+
+    message = _transcript_reply(voice_item, "open with the customer story")
+    asyncio.run(apply_reply_edit(message, USER))
+
+    row = database.get_by_id(voice_item, USER)
+    assert (row["original_text"], row["summary"], row["title"]) == ("open with the customer story", "SUMMARY: old", "Pitch Plan")
+    assert "couldn't rewrite the summary" in message.replies[0]
+
+
+def test_empty_corrected_transcript_changes_nothing(voice_item):
+    message = _transcript_reply(voice_item, "   ")
+    asyncio.run(apply_reply_edit(message, USER))
+    assert database.get_by_id(voice_item, USER)["original_text"] == "open with the costumer story"

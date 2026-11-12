@@ -441,3 +441,25 @@ onboarding, encrypting stored API keys) was deliberately skipped.
   checked with Mermaid 11
 - ✅ New `USER_GUIDE.md`
 - ❌ No demo GIF yet
+
+### Instagram photo posts
+- ✅ The post's metadata is read first (`ignore_no_formats_error`); posts
+  starting with a video take the video path, photo posts and photo
+  carousels send up to 10 images to Gemini in one request, plus the caption
+- ✅ Verified live without login on two public NASA photo posts; a reel
+  still takes the video path
+- ⚠️ Carousels with several photos covered by unit tests only (no public
+  multi-photo test post found); mixed carousels skip their videos
+
+### Editable voice-note transcripts
+- ✅ Voice and audio summaries show the transcript in a collapsed
+  `<blockquote expandable>`, and `/view` shows it too
+- ✅ 🎙 Edit transcript button: sends the transcript as tap-to-copy `<pre>`
+  text with a ForceReply prompt carrying the item id; the reply is saved
+  as the new original text, then the summary and title are rewritten
+  (category, notes and number kept). The corrected transcript is saved
+  even if Gemini then fails
+- ✅ Transcripts over 3,500 characters say they're too long to edit in a
+  Telegram message
+- ⚠️ Telegram rendering of the collapsed quote and the edit round trip not
+  yet checked in the real app

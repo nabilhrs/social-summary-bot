@@ -147,6 +147,18 @@ def update_fields(row_id: int, user_id: int, **fields) -> bool:
         return cursor.rowcount > 0
 
 
+def replace_text(row_id: int, user_id: int, original_text: str, summary: str, title: str | None) -> bool:
+    """After a corrected transcript: new original text, summary and title.
+    Category, notes and merge history are left as they are."""
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET original_text = ?, summary = ?, title = COALESCE(?, title) "
+            "WHERE id = ? AND user_id = ?",
+            (original_text, summary, title, row_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+
 def append_note(row_id: int, user_id: int, note: str) -> bool:
     """Adds `note` on a new line after any existing note."""
     with sqlite3.connect(config.db_path) as conn:

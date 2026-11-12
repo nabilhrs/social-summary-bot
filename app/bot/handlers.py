@@ -55,6 +55,7 @@ from app.bot.actions import apply_reply_edit, build_item_actions_keyboard
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
     SUMMARY_FAILED_TEXT,
+    TRANSCRIBED_SOURCES,
     build_merge_keyboard,
     format_full_item,
     format_saved_summary,
@@ -216,10 +217,11 @@ async def _summarize_and_save(message: Message, user_id: int, api_key: str, cont
         logger.exception("Failed to save summary to database")
         new_id = None
 
+    transcript = content["text"] if content["source"] in TRANSCRIBED_SOURCES else None
     await message.reply_text(
-        format_saved_summary(new_id, content.get("title"), summary.category, summary.text),
+        format_saved_summary(new_id, content.get("title"), summary.category, summary.text, transcript),
         parse_mode=ParseMode.HTML,
-        reply_markup=build_item_actions_keyboard(new_id) if new_id else None,
+        reply_markup=build_item_actions_keyboard(new_id, content["source"]) if new_id else None,
     )
     if new_id is None:
         return

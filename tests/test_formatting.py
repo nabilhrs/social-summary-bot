@@ -162,3 +162,23 @@ def test_format_full_item_shows_category_and_escaped_note():
     text = format_full_item(item)
     assert "📂 Career" in text
     assert text.endswith("<b>📝 Your note:</b>\na &lt; b")
+
+
+def test_transcript_block_is_collapsed_escaped_and_trimmed():
+    from app.bot.formatting import transcript_block
+
+    block = transcript_block("a < b")
+    assert block == "<b>🎙 What I heard:</b>\n<blockquote expandable>a &lt; b</blockquote>"
+    long_block = transcript_block("word " * 1000)
+    assert len(long_block) < 1700 and long_block.endswith("…</blockquote>")
+
+
+def test_saved_summary_and_view_include_transcript_for_voice_only():
+    from app.bot.formatting import format_saved_summary
+
+    assert "What I heard" in format_saved_summary(3, "T", "Career", "SUMMARY: s", "spoken words")
+    assert "What I heard" not in format_saved_summary(3, "T", "Career", "SUMMARY: s")
+    item = {"id": 3, "title": "T", "source": "voice", "url": None, "created_at": "2026-11-12T00:00:00",
+            "merged_from": None, "summary": "SUMMARY: s", "original_text": "spoken words"}
+    assert "spoken words" in format_full_item(item)
+    assert "What I heard" not in format_full_item({**item, "source": "web"})

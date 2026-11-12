@@ -1,42 +1,65 @@
 """
-Buttons under each saved summary (and /view): rename, change category, delete.
+Buttons under each saved summary (and /view): rename, change category, add a
+note, delete, and for voice notes and audio, edit the transcript.
 
-Rename and "new category" need typed text, so the bot sends a ForceReply
+Rename, note, "new category" and transcript edits need typed text, so the bot sends a ForceReply
 prompt containing the item id; the user's reply quotes that prompt, and
 apply_reply_edit() reads the id back from it. Nothing is kept in memory
 (see docs/memory.md #5).
 """
 import asyncio
+import html
 import re
 
 from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
-from app.ai.summarizer import clean_category, clean_title
+from app.ai.gemini import GeminiError
+from app.ai.summarizer import clean_category, clean_title, summarize
+from app.bot.formatting import (
+    NO_API_KEY_TEXT,
+    TRANSCRIBED_SOURCES,
+    format_saved_summary,
+    gemini_error_text,
+)
 from app.config import config
-from app.database.database import append_note, get_by_id, get_categories, update_fields
+from app.database.database import (
+    append_note,
+    get_by_id,
+    get_categories,
+    replace_text,
+    resolve_gemini_api_key,
+    update_fields,
+)
 
 RENAME_PROMPT = "✏️ Reply with a new title for #{id}"
 NEW_CATEGORY_PROMPT = "📂 Reply with a new category name for #{id}"
 NOTE_PROMPT = "📝 Reply with a note to add to #{id}"
+TRANSCRIPT_PROMPT = "🎙 Reply with the corrected transcript for #{id}"
 _RENAME_PROMPT_RE = re.compile(r"^✏️ Reply with a new title for #(\d+)")
 _NEW_CATEGORY_PROMPT_RE = re.compile(r"^📂 Reply with a new category name for #(\d+)")
 _NOTE_PROMPT_RE = re.compile(r"^📝 Reply with a note to add to #(\d+)")
+_TRANSCRIPT_PROMPT_RE = re.compile(r"^🎙 Reply with the corrected transcript for #(\d+)")
+# Telegram messages max out at 4096 characters, both the prompt that shows
+# the transcript and the user's corrected reply.
+MAX_EDITABLE_TRANSCRIPT = 3500
 
 
-def build_item_actions_keyboard(item_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+def build_item_actions_keyboard(item_id: int, source: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
         [
-            [
-                InlineKeyboardButton("✏️ Rename", callback_data=f"act:rename:{item_id}"),
-                InlineKeyboardButton("📂 Category", callback_data=f"act:cat:{item_id}"),
-            ],
-            [
-                InlineKeyboardButton("📝 Note", callback_data=f"act:note:{item_id}"),
-                InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}"),
-            ],
-        ]
-    )
+            InlineKeyboardButton("✏️ Rename", callback_data=f"act:rename:{item_id}"),
+            InlineKeyboardButton("📂 Category", callback_data=f"act:cat:{item_id}"),
+        ],
+        [
+            InlineKeyboardButton("📝 Note", callback_data=f"act:note:{item_id}"),
+            InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}"),
+        ],
+    ]
+    if source in TRANSCRIBED_SOURCES:
+        rows.insert(0, [InlineKeyboardButton("🎙 Edit transcript", callback_data=f"act:transcript:{item_id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def build_category_picker(item_id: int, categories: list[str], current: str | None) -> InlineKeyboardMarkup:
@@ -75,6 +98,21 @@ async def handle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
             NOTE_PROMPT.format(id=item_id),
             reply_markup=ForceReply(input_field_placeholder="Your note"),
         )
+    elif action == "transcript":
+        text = item["original_text"]
+        if len(text) > MAX_EDITABLE_TRANSCRIPT:
+            await query.message.reply_text(
+                f"#{item_id}'s transcript is too long to edit in a Telegram message "
+                f"(over {MAX_EDITABLE_TRANSCRIPT:,} characters)."
+            )
+            return
+        await query.message.reply_text(
+            f"{TRANSCRIPT_PROMPT.format(id=item_id)}\n\n"
+            "Tap the text below to copy it, fix what I misheard, and send it back as a reply to this message.\n\n"
+            f"<pre>{html.escape(text, quote=False)}</pre>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ForceReply(input_field_placeholder="Corrected transcript"),
+        )
     elif action == "newcat":
         await query.message.reply_text(
             NEW_CATEGORY_PROMPT.format(id=item_id),
@@ -106,8 +144,14 @@ async def handle_setcat_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 def parse_reply_prompt(prompt_text: str | None) -> tuple[str, int] | None:
-    """("rename" | "category" | "note", item id) if `prompt_text` is one of our prompts."""
-    prompts = (("rename", _RENAME_PROMPT_RE), ("category", _NEW_CATEGORY_PROMPT_RE), ("note", _NOTE_PROMPT_RE))
+    """("rename" | "category" | "note" | "transcript", item id) if
+    `prompt_text` is one of our prompts."""
+    prompts = (
+        ("rename", _RENAME_PROMPT_RE),
+        ("category", _NEW_CATEGORY_PROMPT_RE),
+        ("note", _NOTE_PROMPT_RE),
+        ("transcript", _TRANSCRIPT_PROMPT_RE),
+    )
     for kind, pattern in prompts:
         match = pattern.match(prompt_text or "")
         if match:
@@ -126,6 +170,9 @@ async def apply_reply_edit(message: Message, user_id: int) -> bool:
         return False
 
     kind, item_id = parsed
+    if kind == "transcript":
+        await _apply_transcript_edit(message, user_id, item_id)
+        return True
     if kind == "rename":
         title = clean_title(message.text)
         if title is None:
@@ -151,3 +198,41 @@ async def apply_reply_edit(message: Message, user_id: int) -> bool:
 
     await message.reply_text(reply if updated else f"Couldn't find #{item_id} anymore.")
     return True
+
+
+async def _apply_transcript_edit(message: Message, user_id: int, item_id: int) -> None:
+    """Saves the corrected transcript, then rewrites the summary and title
+    from it. The transcript is saved even if Gemini then fails."""
+    new_text = (message.text or "").strip()
+    if not new_text:
+        await message.reply_text("That transcript is empty — nothing changed.")
+        return
+    item = await asyncio.to_thread(get_by_id, item_id, user_id)
+    if item is None:
+        await message.reply_text(f"Couldn't find #{item_id} anymore.")
+        return
+    await asyncio.to_thread(replace_text, item_id, user_id, new_text, item["summary"], None)
+
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
+    if api_key is None:
+        await message.reply_text(f"Saved the corrected transcript for #{item_id}. {NO_API_KEY_TEXT}")
+        return
+    categories = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
+    content = {"title": None, "author": item.get("author"), "source": item["source"], "url": item.get("url"), "text": new_text}
+    await message.chat.send_action(ChatAction.TYPING)
+    try:
+        summary = await summarize(content, [], api_key, categories)
+    except GeminiError as exc:
+        await message.reply_text(
+            f"Saved the corrected transcript for #{item_id}, but couldn't rewrite the summary. {gemini_error_text(exc)}"
+        )
+        return
+
+    title = summary.title or item.get("title")
+    await asyncio.to_thread(replace_text, item_id, user_id, new_text, summary.text, title)
+    await message.reply_text(
+        "✅ Transcript updated and summary rewritten.\n\n"
+        + format_saved_summary(item_id, title, item.get("category"), summary.text, new_text),
+        parse_mode=ParseMode.HTML,
+        reply_markup=build_item_actions_keyboard(item_id, item["source"]),
+    )

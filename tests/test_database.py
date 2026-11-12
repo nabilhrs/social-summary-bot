@@ -517,3 +517,13 @@ def test_search_items_matches_user_note_and_category(db_path):
 
     assert [item["id"] for item in database.search_items(USER, "ryokan")[0]] == [noted]
     assert [item["id"] for item in database.search_items(USER, "travel")[0]] == [noted]
+
+
+def test_replace_text_keeps_title_when_none_and_respects_owner(db_path):
+    row_id = database.save_summary(_make_content("Keep Me", "old"), "TL;DR: old", USER, category="Career")
+
+    assert database.replace_text(row_id, USER, "new text", "TL;DR: new", None) is True
+    assert database.replace_text(row_id, OTHER_USER, "hijack", "x", "x") is False
+
+    row = database.get_by_id(row_id, USER)
+    assert (row["original_text"], row["summary"], row["title"], row["category"]) == ("new text", "TL;DR: new", "Keep Me", "Career")

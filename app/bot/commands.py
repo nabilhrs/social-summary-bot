@@ -394,7 +394,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(
-        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id)
+        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id, item["source"])
     )
 
 
