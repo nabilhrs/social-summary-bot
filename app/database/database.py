@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS summaries (
     merged_from TEXT,
     previous_summary TEXT,
     category TEXT,
-    user_note TEXT
+    user_note TEXT,
+    starred INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -58,6 +59,8 @@ def init_db() -> None:
         for column in ("previous_summary", "category", "user_note"):
             if not _column_exists(conn, "summaries", column):
                 conn.execute(f"ALTER TABLE summaries ADD COLUMN {column} TEXT")
+        if not _column_exists(conn, "summaries", "starred"):
+            conn.execute("ALTER TABLE summaries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "summaries", "user_id"):
             conn.execute("ALTER TABLE summaries ADD COLUMN user_id INTEGER")
             # Pre-existing rows predate multi-user support and belong to
@@ -104,33 +107,53 @@ def get_categories(user_id: int) -> list[tuple[str, int]]:
         ).fetchall()
 
 
-def count_items(user_id: int, category: str | None = None, uncategorized: bool = False) -> int:
-    condition, params = _category_filter(user_id, category, uncategorized)
+def count_items(
+    user_id: int, category: str | None = None, uncategorized: bool = False, starred: bool = False
+) -> int:
+    condition, params = _scope_filter(user_id, category, uncategorized, starred)
     with sqlite3.connect(config.db_path) as conn:
         return conn.execute(f"SELECT COUNT(*) FROM summaries WHERE {condition}", params).fetchone()[0]
 
 
 def list_page(
-    user_id: int, offset: int, limit: int, category: str | None = None, uncategorized: bool = False
+    user_id: int,
+    offset: int,
+    limit: int,
+    category: str | None = None,
+    uncategorized: bool = False,
+    starred: bool = False,
 ) -> list[dict]:
-    """Newest first. category=None and uncategorized=False lists everything."""
-    condition, params = _category_filter(user_id, category, uncategorized)
+    """Newest first. With no filter, lists everything."""
+    condition, params = _scope_filter(user_id, category, uncategorized, starred)
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            f"SELECT id, title, original_text, created_at, category FROM summaries "
+            f"SELECT id, title, original_text, created_at, category, starred FROM summaries "
             f"WHERE {condition} ORDER BY id DESC LIMIT ? OFFSET ?",
             params + (limit, offset),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
-def _category_filter(user_id: int, category: str | None, uncategorized: bool) -> tuple[str, tuple]:
+def _scope_filter(user_id: int, category: str | None, uncategorized: bool, starred: bool) -> tuple[str, tuple]:
+    if starred:
+        return "user_id = ? AND starred = 1", (user_id,)
     if uncategorized:
         return "user_id = ? AND category IS NULL", (user_id,)
     if category is not None:
         return "user_id = ? AND category = ?", (user_id, category)
     return "user_id = ?", (user_id,)
+
+
+def toggle_star(row_id: int, user_id: int) -> bool | None:
+    """Flips the star; returns the new state, or None if the item isn't the user's."""
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET starred = 1 - starred WHERE id = ? AND user_id = ?", (row_id, user_id)
+        )
+        if cursor.rowcount == 0:
+            return None
+        return bool(conn.execute("SELECT starred FROM summaries WHERE id = ?", (row_id,)).fetchone()[0])
 
 
 def update_fields(row_id: int, user_id: int, **fields) -> bool:
@@ -168,6 +191,18 @@ def append_note(row_id: int, user_id: int, note: str) -> bool:
             (note, note, row_id, user_id),
         )
         return cursor.rowcount > 0
+
+
+def get_saved_links(user_id: int) -> list[dict]:
+    """Every item saved from a link, newest first."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, url, title, original_text, created_at FROM summaries "
+            "WHERE user_id = ? AND url IS NOT NULL ORDER BY id DESC",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def get_items_since(user_id: int, since_iso: str) -> list[dict]:

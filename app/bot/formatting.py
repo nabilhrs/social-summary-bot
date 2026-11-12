@@ -143,6 +143,8 @@ def format_full_item(item: dict) -> str:
     lines.append(f"Saved: {item['created_at'][:10]} · Source: {escape(item['source'])}")
     if item.get("category"):
         lines.append(f"📂 {escape(item['category'])}")
+    if item.get("starred"):
+        lines.append("⭐ Starred")
     if item.get("url"):
         lines.append(f"URL: {escape(item['url'])}")
     if item.get("merged_from"):

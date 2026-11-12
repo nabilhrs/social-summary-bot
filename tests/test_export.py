@@ -16,6 +16,7 @@ ITEM = {
     "previous_summary": "TL;DR: older.",
     "category": "Food & Drink",
     "user_note": "Try the iced latte.",
+    "starred": 1,
 }
 
 

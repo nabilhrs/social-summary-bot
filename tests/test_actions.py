@@ -22,7 +22,15 @@ def _buttons(markup):
 
 def test_item_actions_keyboard_callback_data():
     data = [button.callback_data for button in _buttons(build_item_actions_keyboard(12))]
-    assert data == ["act:rename:12", "act:cat:12", "act:note:12", "delconfirm:12"]
+    assert data == ["act:rename:12", "act:cat:12", "act:note:12", "star:12", "delconfirm:12"]
+
+
+def test_star_button_label_reflects_state():
+    def star_button(starred):
+        return next(b for b in _buttons(build_item_actions_keyboard(3, "web", starred)) if b.callback_data == "star:3")
+
+    assert star_button(False).text == "⭐ Star"
+    assert star_button(True).text == "★ Starred"
 
 
 def test_category_picker_marks_current_and_offers_new():

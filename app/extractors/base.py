@@ -1,7 +1,8 @@
 """
 Shared helpers for turning raw input into the normalized content object (PRD 5.1, 5.3).
 """
-from urllib.parse import urlparse
+import re
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 
 def looks_like_url(text: str) -> bool:
@@ -44,6 +45,63 @@ def detect_unsupported_platform(url: str) -> str | None:
 
 def is_threads_url(url: str) -> bool:
     return _matches((urlparse(url).hostname or "").lower(), _THREADS_DOMAINS)
+
+
+_YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+_YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def youtube_video_id(url: str) -> str | None:
+    """The 11-character video id for watch, youtu.be, Shorts, live and embed links."""
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if not _matches(hostname, _YOUTUBE_HOSTS):
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    if hostname.endswith("youtu.be"):
+        candidate = parts[0] if parts else ""
+    elif parts[:1] == ["watch"]:
+        candidate = dict(parse_qsl(parsed.query)).get("v", "")
+    elif len(parts) >= 2 and parts[0] in ("shorts", "live", "embed", "v"):
+        candidate = parts[1]
+    else:
+        return None
+    return candidate if _YOUTUBE_ID_RE.match(candidate) else None
+
+
+# Query parameters that only track where a link was shared from.
+_TRACKING_PARAMS = {
+    "si", "igsh", "igshid", "fbclid", "gclid", "ref", "ref_src", "mc_cid", "mc_eid", "feature",
+    "is_from_webapp", "sender_device", "sender_web_id", "share_app_id", "_r", "_t", "t", "pp",
+}
+
+
+def link_key(url: str) -> str:
+    """A canonical form of a link, so the same page shared twice (with a
+    different tracking suffix, www./m. prefix or trailing slash) matches."""
+    video_id = youtube_video_id(url)
+    if video_id:
+        return f"youtube:{video_id}"
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    for prefix in ("www.", "m."):
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+    query = sorted(
+        (k, v) for k, v in parse_qsl(parsed.query) if k not in _TRACKING_PARAMS and not k.startswith("utm_")
+    )
+    path = parsed.path.rstrip("/")
+    return f"{host}{path}" + (f"?{urlencode(query)}" if query else "")
+
+
+def normalize_youtube_video(url: str, extracted: dict) -> dict:
+    return {
+        "title": extracted.get("title"),
+        "author": extracted.get("author"),
+        "source": "youtube",
+        "url": url,
+        "text": extracted["text"],
+    }
 
 
 def video_platform(url: str) -> str | None:

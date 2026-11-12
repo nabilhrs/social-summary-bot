@@ -17,6 +17,7 @@ from app.ai.summarizer import answer_question, clean_category, clean_title
 from app.config import config
 from app.database.database import (
     append_note,
+    count_items,
     get_all_items,
     get_categories,
     update_fields,
@@ -27,7 +28,7 @@ from app.database.database import (
     resolve_gemini_api_key,
 )
 from app.bot.actions import build_item_actions_keyboard
-from app.bot.browse import CATEGORY, MENU_CALLBACK, decode_page, format_item_line, render_menu, render_page
+from app.bot.browse import CATEGORY, MENU_CALLBACK, STARRED, decode_page, format_item_line, render_menu, render_page
 from app.bot.digest import send_digest
 from app.bot.export import build_json, build_markdown
 from app.bot.formatting import (
@@ -42,7 +43,7 @@ from app.bot.formatting import (
 
 WELCOME_TEXT = (
     "👋 Hey! I'm your personal content summarizer.\n\n"
-    "Send me a link (articles, Threads posts, TikTok videos, Instagram posts), paste text, or "
+    "Send me a link (articles, YouTube, Threads, TikTok, Instagram), paste text, or "
     "send a photo, screenshot, voice note, video, or PDF — I'll send back a "
     "summary and save it. If something looks related to an earlier save, I'll "
     "offer to merge them.\n\n"
@@ -52,8 +53,8 @@ WELCOME_TEXT = (
 
 HELP_TEXT = (
     "*What I can do*\n\n"
-    "• Send a URL — articles, Threads posts, TikTok videos, or Instagram "
-    "reels and photo posts — and I'll extract and summarize it. Videos take "
+    "• Send a URL — articles, YouTube videos, Threads posts, TikTok videos, or "
+    "Instagram reels and photo posts — and I'll extract and summarize it. Videos take "
     "longer since I actually download and watch them.\n"
     "• Send pasted text — I'll summarize it directly.\n"
     "• Send a photo or screenshot, voice note, audio, video, or a PDF/text "
@@ -70,6 +71,7 @@ HELP_TEXT = (
     "older note to revisit.\n\n"
     "*Commands*\n"
     "`/list` — browse your notes by category (`/list <category>` jumps to one)\n"
+    "`/starred` — your starred notes (tap Star under any summary)\n"
     "`/search <keyword>` — search your saved items\n"
     "`/ask <question>` — ask a question; I answer from your saved notes and cite them\n"
     "`/view <id>` — show the full summary for a saved item\n"
@@ -193,6 +195,18 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"No category called \"{' '.join(context.args)}\" — here are yours:")
 
     text, markup = await render_menu(user_id)
+    await update.message.reply_text(text, reply_markup=markup)
+
+
+async def starred_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+    if await asyncio.to_thread(lambda: count_items(user_id, starred=True)) == 0:
+        await update.message.reply_text("No starred notes yet. Tap ⭐ Star under any summary to add one.")
+        return
+    text, markup = await render_page(user_id, 0, STARRED, None)
     await update.message.reply_text(text, reply_markup=markup)
 
 
@@ -394,7 +408,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(
-        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id, item["source"])
+        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id, item["source"], bool(item.get("starred")))
     )
 
 

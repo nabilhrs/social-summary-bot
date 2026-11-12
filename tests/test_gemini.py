@@ -40,7 +40,7 @@ class _FakeClient:
         self.calls: list[str] = []
         self.models = self
 
-    def generate_content(self, model, contents):
+    def generate_content(self, model, contents, config=None):
         self.calls.append(model)
         outcome = self.script[model].pop(0)
         if isinstance(outcome, Exception):

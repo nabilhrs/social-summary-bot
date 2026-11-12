@@ -30,6 +30,7 @@ from app.database.database import (
     get_categories,
     replace_text,
     resolve_gemini_api_key,
+    toggle_star,
     update_fields,
 )
 
@@ -46,7 +47,7 @@ _TRANSCRIPT_PROMPT_RE = re.compile(r"^🎙 Reply with the corrected transcript f
 MAX_EDITABLE_TRANSCRIPT = 3500
 
 
-def build_item_actions_keyboard(item_id: int, source: str | None = None) -> InlineKeyboardMarkup:
+def build_item_actions_keyboard(item_id: int, source: str | None = None, starred: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton("✏️ Rename", callback_data=f"act:rename:{item_id}"),
@@ -54,8 +55,9 @@ def build_item_actions_keyboard(item_id: int, source: str | None = None) -> Inli
         ],
         [
             InlineKeyboardButton("📝 Note", callback_data=f"act:note:{item_id}"),
-            InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}"),
+            InlineKeyboardButton("★ Starred" if starred else "⭐ Star", callback_data=f"star:{item_id}"),
         ],
+        [InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}")],
     ]
     if source in TRANSCRIBED_SOURCES:
         rows.insert(0, [InlineKeyboardButton("🎙 Edit transcript", callback_data=f"act:transcript:{item_id}")])
@@ -124,6 +126,25 @@ async def handle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
             f"📂 Pick a category for #{item_id}:",
             reply_markup=build_category_picker(item_id, categories, item.get("category")),
         )
+
+
+async def handle_star_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user_id = update.effective_user.id if update.effective_user else None
+    if query is None or query.data is None:
+        return
+    if user_id is None or not config.is_authorized(user_id):
+        await query.answer()
+        return
+
+    item_id = int(query.data.split(":")[1])
+    starred = await asyncio.to_thread(toggle_star, item_id, user_id)
+    if starred is None:
+        await query.answer(f"Couldn't find #{item_id} anymore.")
+        return
+    await query.answer("⭐ Starred" if starred else "Removed from starred")
+    item = await asyncio.to_thread(get_by_id, item_id, user_id)
+    await query.edit_message_reply_markup(reply_markup=build_item_actions_keyboard(item_id, item["source"], starred))
 
 
 async def handle_setcat_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -234,5 +255,5 @@ async def _apply_transcript_edit(message: Message, user_id: int, item_id: int) -
         "✅ Transcript updated and summary rewritten.\n\n"
         + format_saved_summary(item_id, title, item.get("category"), summary.text, new_text),
         parse_mode=ParseMode.HTML,
-        reply_markup=build_item_actions_keyboard(item_id, item["source"]),
+        reply_markup=build_item_actions_keyboard(item_id, item["source"], bool(item.get("starred"))),
     )

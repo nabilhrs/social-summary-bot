@@ -17,6 +17,7 @@ _EXPORTED_FIELDS = (
     "previous_summary",
     "category",
     "user_note",
+    "starred",
 )
 
 

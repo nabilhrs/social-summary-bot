@@ -527,3 +527,23 @@ def test_replace_text_keeps_title_when_none_and_respects_owner(db_path):
 
     row = database.get_by_id(row_id, USER)
     assert (row["original_text"], row["summary"], row["title"], row["category"]) == ("new text", "TL;DR: new", "Keep Me", "Career")
+
+
+def test_toggle_star_flips_and_scopes_lists(db_path):
+    first = database.save_summary(_make_content("A", "x"), "TL;DR: x", USER)
+    second = database.save_summary(_make_content("B", "x"), "TL;DR: x", USER)
+
+    assert database.toggle_star(first, USER) is True
+    assert database.toggle_star(first, OTHER_USER) is None
+    assert database.count_items(USER, starred=True) == 1
+    assert [i["id"] for i in database.list_page(USER, 0, 10, starred=True)] == [first]
+    assert database.list_page(USER, 0, 10)[1]["starred"] == 1
+    assert database.toggle_star(first, USER) is False
+    assert database.count_items(USER, starred=True) == 0
+    assert database.get_by_id(second, USER)["starred"] == 0
+
+
+def test_get_saved_links_only_returns_link_items(db_path):
+    linked = database.save_summary({**_make_content("L", "x"), "url": "https://a.com/x", "source": "web"}, "s", USER)
+    database.save_summary(_make_content("Pasted", "x"), "s", USER)
+    assert [i["id"] for i in database.get_saved_links(USER)] == [linked]

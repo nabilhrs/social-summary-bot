@@ -54,7 +54,11 @@ def _final_kind(failures: list[str]) -> str:
 
 
 def generate_text(
-    api_key: str, contents, timeout_seconds: float = 30, deadline_seconds: float = 90
+    api_key: str,
+    contents,
+    timeout_seconds: float = 30,
+    deadline_seconds: float = 90,
+    config: types.GenerateContentConfig | None = None,
 ) -> str:
     """Blocking — call via asyncio.to_thread. Returns the response text, or
     raises GeminiError whose `kind` says why every model failed."""
@@ -70,7 +74,7 @@ def generate_text(
                 logger.error("Gemini deadline of %ss exceeded", deadline_seconds)
                 raise GeminiError(_final_kind(failures + [UNAVAILABLE]))
             try:
-                response = client.models.generate_content(model=model, contents=contents)
+                response = client.models.generate_content(model=model, contents=contents, config=config)
             except errors.APIError as exc:
                 if _is_invalid_key(exc):
                     logger.error("Gemini rejected the API key: %s", exc)

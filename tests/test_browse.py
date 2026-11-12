@@ -95,3 +95,20 @@ def test_render_menu_counts(db):
     text, markup = asyncio.run(browse.render_menu(USER))
     assert "(23)" in text
     assert "📂 Career (12)" in [button.text for button in _buttons(markup)]
+
+
+def test_menu_shows_starred_button_only_when_something_is_starred():
+    from app.bot.browse import STARRED
+
+    _, markup = build_menu(5, [("Career", 5)], uncategorized=0, starred=2)
+    starred = [b for b in _buttons(markup) if b.text.startswith("⭐")]
+    assert [b.text for b in starred] == ["⭐ Starred (2)"]
+    assert starred[0].callback_data == encode_page(0, STARRED)
+    _, markup = build_menu(5, [("Career", 5)], uncategorized=0, starred=0)
+    assert not any(b.text.startswith("⭐") for b in _buttons(markup))
+
+
+def test_starred_items_get_a_star_in_page_lines():
+    text, _ = build_page([{**_item(5, "Fav"), "starred": 1}, _item(4, "Plain")], 0, 2, ALL, None)
+    assert "⭐ #5 — Fav" in text
+    assert "\n#4 — Plain" in text

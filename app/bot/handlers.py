@@ -8,13 +8,14 @@ URL -> normalize -> summarize (flagging related saved items) -> reply -> save
 import asyncio
 import logging
 
-from telegram import Message, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from app.config import config
 from app.extractors.base import (
     VIDEO_PLATFORM_NAMES,
+    link_key,
     looks_like_url,
     detect_unsupported_platform,
     is_threads_url,
@@ -22,11 +23,14 @@ from app.extractors.base import (
     normalize_web_article,
     normalize_threads_post,
     normalize_video_post,
+    normalize_youtube_video,
     video_platform,
+    youtube_video_id,
 )
 from app.extractors.webpage import fetch_and_extract
 from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.video_link import NO_VIDEO, VideoUnavailable, fetch_and_extract as fetch_video_link
+from app.extractors.youtube import fetch_and_extract as fetch_youtube_video
 from app.extractors.media import (
     AUDIO,
     IMAGE,
@@ -39,13 +43,15 @@ from app.extractors.media import (
     classify_document,
     extract_text,
 )
-from app.ai.gemini import GeminiError
+from app.ai.gemini import FAILED, GeminiError
 from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
+from app.bot.browse import display_title
 from app.database.database import (
     save_summary,
     get_categories,
     get_recent,
+    get_saved_links,
     get_by_id,
     update_merged_summary,
     delete_item,
@@ -75,7 +81,12 @@ UNSUPPORTED_PLATFORM_TEXT = (
     "{platform} doesn't allow me to pull post content automatically. "
     "Please paste the text here and I'll summarize it."
 )
-VIDEO_PROCESSING_TEXT = "🎥 Downloading this {platform} post — videos take a moment..."
+YOUTUBE_PROCESSING_TEXT = "▶️ Watching this YouTube video — longer videos take a while..."
+YOUTUBE_FAILED_TEXT = (
+    "I couldn't watch that YouTube video. It may be private, age-restricted, "
+    "or too long. Send me a link to a different video, or paste the key points."
+)
+VIDEO_PROCESSING_TEXT ="🎥 Downloading this {platform} post — videos take a moment..."
 VIDEO_FAILED_TEXT = (
     "I couldn't download that {platform} post. You can send me the video file itself, "
     "or a screenshot, and I'll summarize that instead."
@@ -138,10 +149,67 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if await apply_reply_edit(message, user.id):
         return
 
+    # Checked before anything costs a Gemini request.
+    if looks_like_url(raw_text):
+        saved = await asyncio.to_thread(find_saved_link, user.id, raw_text)
+        if saved is not None:
+            await message.reply_text(already_saved_text(saved), reply_markup=build_duplicate_keyboard(saved["id"]))
+            return
+
+    await _process_input(message, user.id, raw_text)
+
+
+def find_saved_link(user_id: int, url: str) -> dict | None:
+    key = link_key(url)
+    return next((item for item in get_saved_links(user_id) if link_key(item["url"]) == key), None)
+
+
+def already_saved_text(item: dict) -> str:
+    return f"📌 Already saved as #{item['id']} — {display_title(item)} ({item['created_at'][:10]})."
+
+
+def build_duplicate_keyboard(item_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(f"👀 View #{item_id}", callback_data=f"dup:view:{item_id}"),
+            InlineKeyboardButton("🔄 Save again", callback_data=f"dup:again:{item_id}"),
+        ]]
+    )
+
+
+async def handle_duplicate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Buttons on an "Already saved" reply. "Save again" re-reads the link
+    stored on the existing item, so no state is kept between messages."""
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    if user is None or not config.is_authorized(user.id):
+        return
+
+    _, action, id_str = query.data.split(":")
+    item = await asyncio.to_thread(get_by_id, int(id_str), user.id)
+    if item is None or not item.get("url"):
+        await query.message.reply_text(f"Couldn't find #{id_str} anymore.")
+        return
+    if action == "view":
+        await query.message.reply_text(
+            format_full_item(item),
+            parse_mode=ParseMode.HTML,
+            reply_markup=build_item_actions_keyboard(item["id"], item["source"], bool(item.get("starred"))),
+        )
+        return
+    await query.edit_message_reply_markup(reply_markup=None)
+    await _process_input(query.message, user.id, item["url"])
+
+
+async def _process_input(message: Message, user_id: int, raw_text: str) -> None:
+    """Extract (for links), summarize and save. `message` is what replies go to."""
     # Resolved before any extraction work — no point downloading a video
     # (the slowest, most expensive path) only to fail at the
     # summarize step for lack of a key.
-    api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
     if api_key is None:
         await message.reply_text(NO_API_KEY_TEXT)
         return
@@ -155,7 +223,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         video_source = video_platform(raw_text)
-        if video_source is not None:
+        youtube_id = youtube_video_id(raw_text)
+        if youtube_id is not None:
+            await message.reply_text(YOUTUBE_PROCESSING_TEXT)
+            try:
+                extracted = await fetch_youtube_video(youtube_id, api_key)
+            except GeminiError as exc:
+                await message.reply_text(YOUTUBE_FAILED_TEXT if exc.kind == FAILED else gemini_error_text(exc))
+                return
+            content = normalize_youtube_video(raw_text, extracted)
+        elif video_source is not None:
             name = VIDEO_PLATFORM_NAMES[video_source]
             await message.reply_text(VIDEO_PROCESSING_TEXT.format(platform=name))
             try:
@@ -187,7 +264,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         content = normalize_pasted_text(raw_text)
 
-    await _summarize_and_save(message, user.id, api_key, content)
+    await _summarize_and_save(message, user_id, api_key, content)
     if is_threads_content:
         await message.reply_text(THREADS_LIMITATION_NOTE)
 
@@ -207,8 +284,8 @@ async def _summarize_and_save(message: Message, user_id: int, api_key: str, cont
         await message.reply_text(gemini_error_text(exc))
         return
 
-    # Web articles keep their real headline; everything else gets the generated title.
-    if not (content["source"] == "web" and content.get("title")):
+    # Web articles and YouTube videos keep their real title; everything else gets the generated one.
+    if not (content["source"] in ("web", "youtube") and content.get("title")):
         content = {**content, "title": summary.title or content.get("title")}
 
     try:
