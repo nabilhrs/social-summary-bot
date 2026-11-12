@@ -19,6 +19,7 @@ Open your bot in Telegram and tap **Start** (or send `/start`). That's it: there
 | **A Threads post link** | The post's own text is summarized. Replies in the thread aren't visible to the bot, so it reminds you to paste the rest if you want it included. |
 | **A TikTok link** | The video is downloaded and watched: you get a summary of what's shown and said, plus the caption. Takes 30 seconds or more. |
 | **An Instagram reel or video post link** | Same as TikTok. For a post with several videos, the first one is used. |
+| **An Instagram photo post link** | The photos (up to 10 in a carousel) are read: any text in them is transcribed and the rest described, then summarized together with the caption. |
 | **A photo or screenshot** | Any text in it is transcribed, and the rest of the image is described. |
 | **A voice note or audio file** | Written down word for word, in the language you spoke, then summarized. |
 | **A video file** | Watched and described, then summarized. |
@@ -151,7 +152,7 @@ Send `/export` and the bot sends two files:
 The bot already retried and tried two backup models. For "overloaded", wait a few minutes. For "today's free quota", it resets at midnight Pacific time. Nothing you sent is lost; send it again later.
 
 **An Instagram link didn't work.**
-If the bot says it needs a login, the post is private, a story, or Instagram is limiting the server. If it says there's no video, it's a photo post. Either way, send a screenshot or the video file itself and the bot reads that instead.
+If the bot says it needs a login, the post is private, a story, or Instagram is limiting the server. Send a screenshot or the video file itself and the bot reads that instead.
 
 **The category is wrong.**
 Tap **📂 Category** under the summary, or send `/move <id> <category>`.

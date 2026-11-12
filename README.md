@@ -1,11 +1,11 @@
 # Social Summary Bot
 
-A personal Telegram bot that turns whatever you send it into a short, saved summary: articles, Threads posts, TikTok and Instagram videos, pasted text, screenshots, voice notes, audio, videos and PDFs. Every save gets a title and a category, related notes can be merged, and you can ask questions across everything you've saved.
+A personal Telegram bot that turns whatever you send it into a short, saved summary: articles, Threads posts, TikTok videos, Instagram reels and photo posts, pasted text, screenshots, voice notes, audio, videos and PDFs. Every save gets a title and a category, related notes can be merged, and you can ask questions across everything you've saved.
 
 ## Features
 
-- **Send almost anything.** A link (web article, Threads post, TikTok video, Instagram reel or video post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
-- **Videos are actually watched.** TikTok and Instagram videos are downloaded and Gemini describes what's shown and said, not just the caption.
+- **Send almost anything.** A link (web article, Threads post, TikTok video, Instagram reel or photo post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
+- **Videos are actually watched.** TikTok and Instagram videos are downloaded and Gemini describes what's shown and said, not just the caption. Instagram photo posts (up to 10 photos) have their text transcribed and contents described, together with the caption.
 - **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said.
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
@@ -46,7 +46,7 @@ sequenceDiagram
     participant G as Gemini
     participant D as SQLite
     Y->>B: Instagram reel link
-    B-->>Y: "Downloading and watching this Instagram video..."
+    B-->>Y: "Downloading this Instagram post..."
     B->>V: download the video
     V-->>B: mp4 + caption
     B->>G: upload video, "describe what happens"
@@ -120,7 +120,7 @@ New columns are added automatically when the bot starts, so an existing `summari
 | [Google Gemini API](https://ai.google.dev/) (`google-genai`) | Summaries, titles and categories, transcription, reading images, PDFs and videos, `/ask` |
 | SQLite (Python's built-in `sqlite3`) | Notes, categories and settings in one file |
 | [trafilatura](https://trafilatura.readthedocs.io/) | Article text from web pages |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) with `curl-cffi` | Downloading TikTok and Instagram videos |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) with `curl-cffi` | Downloading TikTok and Instagram posts |
 | [httpx](https://www.python-httpx.org/) | Fetching pages and Threads posts |
 | [pytest](https://docs.pytest.org/) | Unit tests |
 | systemd on a Linux VM | Keeping the bot running (see [DEPLOY.md](DEPLOY.md)) |
@@ -228,7 +228,7 @@ Code layout:
 | `app/extractors/base.py` | Link routing and the shared content format |
 | `app/extractors/webpage.py` | Web articles |
 | `app/extractors/threads.py` | Threads posts |
-| `app/extractors/video_link.py` | TikTok and Instagram videos |
+| `app/extractors/video_link.py` | TikTok and Instagram posts (videos and photo posts) |
 | `app/extractors/media.py` | Telegram photos, voice notes, audio, video and documents |
 | `app/database/database.py` | SQLite queries and startup migrations |
 | `deploy/` | VM setup script and systemd unit |
@@ -247,7 +247,7 @@ Code layout:
 
 Your notes are stored in `summarizer.db` on whatever machine runs the bot, and nowhere else. Everything you send is also sent to Google Gemini to be summarized or read, and Google may use free-tier prompts to improve its products, so don't send anything confidential. Gemini API keys set with `/setkey` are stored in the database as plain text.
 
-Downloading TikTok and Instagram videos goes against those platforms' terms. This bot is meant for personal use with your own saved content.
+Downloading TikTok and Instagram posts goes against those platforms' terms. This bot is meant for personal use with your own saved content.
 
 ## More docs
 
