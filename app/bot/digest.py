@@ -13,9 +13,10 @@ from telegram import Bot
 from telegram.constants import ParseMode
 
 from app.bot.browse import display_title
+from app.bot.export import build_json
 from app.bot.formatting import render_summary_html
 from app.config import config
-from app.database.database import get_items_since, get_random_item_before
+from app.database.database import get_all_items, get_items_since, get_random_item_before
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,21 @@ async def send_digest(bot: Bot, user_id: int) -> bool:
     return True
 
 
+async def send_backup(bot: Bot, user_id: int) -> bool:
+    """The complete JSON backup, so notes never live only on the server."""
+    items = await asyncio.to_thread(get_all_items, user_id)
+    if not items:
+        return False
+    today = datetime.now(ZoneInfo(config.timezone)).strftime("%Y-%m-%d")
+    await bot.send_document(
+        chat_id=user_id,
+        document=build_json(items),
+        filename=f"notes-backup-{today}.json",
+        caption=f"🗄 Weekly backup: {len(items)} note(s). Keep this file somewhere safe.",
+    )
+    return True
+
+
 async def digest_loop(bot: Bot) -> None:
     tz = ZoneInfo(config.timezone)
     while True:
@@ -93,7 +109,8 @@ async def digest_loop(bot: Bot) -> None:
         logger.info("Next weekly digest in %.1f hours", wait / 3600)
         await asyncio.sleep(wait)
         for user_id in config.authorized_user_ids:
-            try:
-                await send_digest(bot, user_id)
-            except Exception:
-                logger.exception("Weekly digest for user %s failed", user_id)
+            for job in (send_digest, send_backup):
+                try:
+                    await job(bot, user_id)
+                except Exception:
+                    logger.exception("Weekly %s for user %s failed", job.__name__, user_id)

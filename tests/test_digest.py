@@ -90,3 +90,38 @@ def test_collect_digest_splits_this_week_from_archive(db):
 
 def test_collect_digest_empty_database(db):
     assert collect_digest(USER, datetime(2026, 10, 11, 9, 0, tzinfo=KL)) is None
+
+
+class _FakeBot:
+    def __init__(self):
+        self.documents = []
+
+    async def send_document(self, chat_id, document, filename, caption):
+        self.documents.append((chat_id, filename, caption, document))
+
+
+def test_send_backup_sends_json_of_all_notes(db):
+    import asyncio
+    import json
+
+    from app.bot.digest import send_backup
+
+    _save_at("One", datetime(2026, 10, 1, tzinfo=timezone.utc))
+    _save_at("Two", datetime(2026, 10, 2, tzinfo=timezone.utc))
+    bot = _FakeBot()
+
+    assert asyncio.run(send_backup(bot, USER)) is True
+    chat_id, filename, caption, document = bot.documents[0]
+    assert chat_id == USER and filename.startswith("notes-backup-") and filename.endswith(".json")
+    assert "2 note(s)" in caption
+    assert [row["title"] for row in json.loads(document)] == ["Two", "One"]
+
+
+def test_send_backup_skips_empty_database(db):
+    import asyncio
+
+    from app.bot.digest import send_backup
+
+    bot = _FakeBot()
+    assert asyncio.run(send_backup(bot, USER)) is False
+    assert bot.documents == []
