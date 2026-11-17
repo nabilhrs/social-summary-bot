@@ -7,6 +7,7 @@ model is exhausted (429) or overloaded (503 "high demand", seen live) keeps
 the bot working instead of failing on the first error. A retired model
 (404) also falls through to the next one instead of breaking the bot.
 """
+import io
 import logging
 import time
 
@@ -113,20 +114,15 @@ def generate_text(
     raise GeminiError(_final_kind(failures))
 
 
-def describe_file(
-    api_key: str,
-    file,
-    prompt: str,
-    mime_type: str | None = None,
-    timeout_seconds: float = 60,
-    deadline_seconds: float = 100,
-) -> str:
-    """Blocking. Uploads a file (path or binary stream) to Gemini's Files API,
-    waits for processing, asks `prompt` about it via generate_text(), and
-    always deletes the upload afterward. Raises GeminiError on failure."""
-    client = genai.Client(api_key=api_key)
+TEXT_ITEM = "text/plain"
+# Images up to this size travel inside the request; anything bigger, and all
+# video, audio and PDFs, go through the Files API.
+_MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _upload(client, data, mime_type: str | None):
     try:
-        uploaded = client.files.upload(file=file, config=types.UploadFileConfig(mime_type=mime_type))
+        return client.files.upload(file=data, config=types.UploadFileConfig(mime_type=mime_type))
     except errors.APIError as exc:
         logger.error("Gemini file upload failed: %s", exc)
         if _is_invalid_key(exc):
@@ -136,18 +132,59 @@ def describe_file(
         logger.error("Gemini file upload network error: %s", exc)
         raise GeminiError(UNAVAILABLE) from exc
 
+
+def _wait_until_active(client, uploaded):
+    waited = 0
+    while uploaded.state.name == "PROCESSING" and waited < _MAX_UPLOAD_POLL_SECONDS:
+        time.sleep(1)
+        waited += 1
+        uploaded = client.files.get(name=uploaded.name)
+    if uploaded.state.name != "ACTIVE":
+        logger.error("Uploaded file never became active (state=%s)", uploaded.state)
+        raise GeminiError(FAILED)
+    return uploaded
+
+
+def describe_many(
+    api_key: str,
+    items: list[tuple],
+    prompt: str,
+    timeout_seconds: float = 60,
+    deadline_seconds: float = 100,
+) -> str:
+    """Blocking. Asks `prompt` about several items in one request, in order.
+    Each item is (data, mime_type): data is bytes, a file path or a binary
+    stream, or a string with mime_type TEXT_ITEM. Uploads are always deleted
+    afterward. Raises GeminiError on failure."""
+    client = genai.Client(api_key=api_key)
+    uploads, contents = [], []
     try:
-        waited = 0
-        while uploaded.state.name == "PROCESSING" and waited < _MAX_UPLOAD_POLL_SECONDS:
-            time.sleep(1)
-            waited += 1
-            uploaded = client.files.get(name=uploaded.name)
-        if uploaded.state.name != "ACTIVE":
-            logger.error("Uploaded file never became active (state=%s)", uploaded.state)
-            raise GeminiError(FAILED)
-        return generate_text(api_key, [uploaded, prompt], timeout_seconds, deadline_seconds)
+        for data, mime_type in items:
+            if mime_type == TEXT_ITEM:
+                contents.append(data)
+            elif isinstance(data, bytes) and (mime_type or "").startswith("image/") and len(data) <= _MAX_INLINE_IMAGE_BYTES:
+                contents.append(types.Part.from_bytes(data=data, mime_type=mime_type))
+            else:
+                uploaded = _upload(client, io.BytesIO(data) if isinstance(data, bytes) else data, mime_type)
+                uploads.append(uploaded)
+                contents.append(uploaded)
+        contents = [_wait_until_active(client, c) if c in uploads else c for c in contents]
+        return generate_text(api_key, [*contents, prompt], timeout_seconds, deadline_seconds)
     finally:
-        try:
-            client.files.delete(name=uploaded.name)
-        except Exception:
-            logger.warning("Failed to delete uploaded Gemini file %s", uploaded.name)
+        for uploaded in uploads:
+            try:
+                client.files.delete(name=uploaded.name)
+            except Exception:
+                logger.warning("Failed to delete uploaded Gemini file %s", uploaded.name)
+
+
+def describe_file(
+    api_key: str,
+    file,
+    prompt: str,
+    mime_type: str | None = None,
+    timeout_seconds: float = 60,
+    deadline_seconds: float = 100,
+) -> str:
+    """Blocking. One file (path or binary stream) through the Files API; see describe_many."""
+    return describe_many(api_key, [(file, mime_type)], prompt, timeout_seconds, deadline_seconds)

@@ -139,3 +139,82 @@ def test_empty_responses_everywhere_is_failed(fake_client):
     with pytest.raises(GeminiError) as exc_info:
         generate_text("key", "prompt")
     assert exc_info.value.kind == FAILED
+
+
+class _FakeFiles:
+    def __init__(self):
+        self.uploaded, self.deleted = [], []
+
+    def upload(self, file, config):
+        name = f"files/{len(self.uploaded)}"
+        self.uploaded.append((name, config.mime_type))
+        return _File(name, "ACTIVE")
+
+    def get(self, name):
+        return _File(name, "ACTIVE")
+
+    def delete(self, name):
+        self.deleted.append(name)
+
+
+class _File:
+    def __init__(self, name, state):
+        self.name = name
+        self.state = type("S", (), {"name": state})()
+
+    def __eq__(self, other):
+        return isinstance(other, _File) and other.name == self.name
+
+
+class _RecordingClient:
+    def __init__(self, result="described"):
+        self.files = _FakeFiles()
+        self.models = self
+        self.contents = None
+        self.result = result
+
+    def generate_content(self, model, contents, config=None):
+        self.contents = contents
+        if isinstance(self.result, Exception):
+            raise self.result
+        return _Response(self.result)
+
+
+def _install(monkeypatch, client):
+    monkeypatch.setattr(gemini.genai, "Client", lambda **_kwargs: client)
+    monkeypatch.setattr(gemini.time, "sleep", lambda _s: None)
+
+
+def test_describe_many_inlines_small_images_uploads_video_and_keeps_order(monkeypatch):
+    from app.ai.gemini import TEXT_ITEM, describe_many
+
+    client = _RecordingClient()
+    _install(monkeypatch, client)
+
+    result = describe_many("key", [(b"img", "image/jpeg"), ("clip.mp4", "video/mp4"), ("a note", TEXT_ITEM)], "describe")
+
+    assert result == "described"
+    assert client.files.uploaded == [("files/0", "video/mp4")]
+    kinds = [type(c).__name__ for c in client.contents]
+    assert kinds == ["Part", "_File", "str", "str"]
+    assert client.contents[2:] == ["a note", "describe"]
+    assert client.files.deleted == ["files/0"]
+
+
+def test_describe_many_uploads_large_images(monkeypatch):
+    from app.ai.gemini import describe_many
+
+    client = _RecordingClient()
+    _install(monkeypatch, client)
+    describe_many("key", [(b"x" * (5 * 1024 * 1024), "image/png")], "describe")
+    assert client.files.uploaded == [("files/0", "image/png")]
+
+
+def test_describe_many_deletes_uploads_even_when_gemini_fails(monkeypatch):
+    from app.ai.gemini import describe_many
+
+    client = _RecordingClient(result=_api_error(400, "bad request"))
+    _install(monkeypatch, client)
+    with pytest.raises(GeminiError):
+        describe_many("key", [("a.mp4", "video/mp4"), ("b.mp4", "video/mp4")], "describe")
+    assert client.files.deleted == ["files/0", "files/1"]

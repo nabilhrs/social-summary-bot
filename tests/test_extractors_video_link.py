@@ -33,44 +33,68 @@ def test_classify_other_errors_as_unknown():
     assert classify_download_error("ERROR: Unable to download webpage: HTTP Error 404") is None
 
 
-def _video(**extra):
-    return {"formats": [{"vcodec": "h264"}], "thumbnails": [{"url": "v-thumb"}], **extra}
+from app.extractors import video_link  # noqa: E402
+from app.extractors.video_link import POST_IMAGES_PROMPT, POST_ITEMS_PROMPT, plan_post, prompt_for  # noqa: E402
+
+
+def _video(duration=20, **extra):
+    return {"formats": [{"vcodec": "h264"}], "thumbnails": [{"url": "v-thumb"}], "duration": duration, **extra}
 
 
 def _photo(name, **extra):
     return {"formats": [], "thumbnails": [{"url": f"{name}-small"}, {"url": f"{name}-original"}], **extra}
 
 
-def test_classify_single_photo_post_uses_best_thumbnail():
-    from app.extractors.video_link import classify_post
-
-    assert classify_post(_photo("a")) == ("images", ["a-original"])
+def test_single_video_post():
+    assert plan_post(_video()) == [("video", 1, None)]
 
 
-def test_classify_photo_carousel_keeps_order_and_skips_videos():
-    from app.extractors.video_link import classify_post
-
-    info = {"_type": "playlist", "entries": [_photo("a"), _video(), _photo("b")]}
-    assert classify_post(info) == ("images", ["a-original", "b-original"])
+def test_single_photo_uses_best_thumbnail():
+    assert plan_post(_photo("a")) == [("image", 1, "a-original")]
 
 
-def test_classify_post_starting_with_video_is_a_video():
-    from app.extractors.video_link import classify_post
-
-    assert classify_post(_video()) == ("video", [])
-    assert classify_post({"entries": [_video(), _photo("a")]}) == ("video", [])
+def test_mixed_carousel_keeps_every_item_in_order():
+    info = {"_type": "playlist", "entries": [_photo("a"), _video(), _photo("b"), _video()]}
+    assert plan_post(info) == [("image", 1, "a-original"), ("video", 2, None), ("image", 3, "b-original"), ("video", 4, None)]
 
 
-def test_classify_caps_images_and_handles_empty_posts():
-    from app.extractors.video_link import _MAX_IMAGES, classify_post
-
-    many = {"entries": [_photo(str(i)) for i in range(_MAX_IMAGES + 5)]}
-    assert len(classify_post(many)[1]) == _MAX_IMAGES
-    assert classify_post({"formats": [], "thumbnails": []}) == ("none", [])
-    assert classify_post({"entries": []}) == ("none", [])
+def test_all_video_carousel_keeps_every_video():
+    assert plan_post({"entries": [_video(), _video(), _video()]}) == [("video", 1, None), ("video", 2, None), ("video", 3, None)]
 
 
-def test_classify_falls_back_to_single_thumbnail_field():
-    from app.extractors.video_link import classify_post
+def test_videos_stop_at_the_total_length_cap_but_photos_continue(monkeypatch):
+    monkeypatch.setattr(video_link, "_MAX_VIDEO_SECONDS", 100)
+    info = {"entries": [_video(60), _video(60), _photo("a"), _video(30)]}
+    assert plan_post(info) == [("video", 1, None), ("image", 3, "a-original"), ("video", 4, None)]
 
-    assert classify_post({"formats": [], "thumbnail": "only"}) == ("images", ["only"])
+
+def test_first_video_is_kept_even_if_longer_than_the_cap(monkeypatch):
+    monkeypatch.setattr(video_link, "_MAX_VIDEO_SECONDS", 100)
+    assert plan_post({"entries": [_video(500), _video(10)]}) == [("video", 1, None)]
+
+
+def test_items_are_capped():
+    info = {"entries": [_photo(str(i)) for i in range(video_link._MAX_ITEMS + 5)]}
+    assert len(plan_post(info)) == video_link._MAX_ITEMS
+
+
+def test_empty_posts_have_no_plan():
+    assert plan_post({"formats": [], "thumbnails": []}) == []
+    assert plan_post({"entries": []}) == []
+
+
+def test_missing_duration_counts_as_assumed_length(monkeypatch):
+    monkeypatch.setattr(video_link, "_MAX_VIDEO_SECONDS", 50)
+    info = {"entries": [_video(None), _video(None)]}
+    assert plan_post(info) == [("video", 1, None)]
+
+
+def test_prompt_matches_the_post_shape():
+    from app.extractors.media import PROMPTS, VIDEO
+
+    assert prompt_for([("video", 1, None)]) == PROMPTS[VIDEO]
+    assert prompt_for([("image", 1, "a"), ("image", 2, "b")]) == POST_IMAGES_PROMPT
+    assert prompt_for([("video", 1, None), ("video", 2, None)]) == POST_ITEMS_PROMPT
+    assert prompt_for([("image", 1, "a"), ("video", 2, None)]) == POST_ITEMS_PROMPT
+
+

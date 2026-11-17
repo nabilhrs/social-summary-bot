@@ -1,8 +1,8 @@
 """
-TikTok and Instagram links: videos are downloaded with yt-dlp and Gemini
-describes what's actually shown and said; photo posts (one photo or a
-carousel) have their images read by Gemini in one request. The caption is
-added to either. The caption alone is often minimal or missing.
+TikTok and Instagram links: every photo and video in the post (a single
+reel, a photo post, or a carousel mixing both) is downloaded and Gemini
+reads them together in one request, in order: what's shown, said and
+written. The caption is added; on its own it's often minimal or missing.
 
 TikTok's and Instagram's terms restrict automated downloading, so this is
 meant for personal use only (see the README). yt-dlp's curl-cffi
@@ -18,18 +18,19 @@ import tempfile
 
 import httpx
 import yt_dlp
-from google.genai import types
 
-from app.ai.gemini import GeminiError, describe_file, generate_text
+from app.ai.gemini import GeminiError, describe_many
 from app.extractors.media import PROMPTS, VIDEO
 
 logger = logging.getLogger(__name__)
 
-_OVERALL_TIMEOUT_SECONDS = 240
-_DESCRIBE_TIMEOUT_SECONDS = 60
-_DESCRIBE_DEADLINE_SECONDS = 100
+_OVERALL_TIMEOUT_SECONDS = 300
+_DESCRIBE_TIMEOUT_SECONDS = 90
+_DESCRIBE_DEADLINE_SECONDS = 150
 _MAX_FILESIZE_BYTES = 200 * 1024 * 1024
-_MAX_IMAGES = 10
+_MAX_ITEMS = 10
+_MAX_VIDEO_SECONDS = 180
+_ASSUMED_VIDEO_SECONDS = 30  # when yt-dlp doesn't report a duration
 _IMAGE_DOWNLOAD_TIMEOUT = 20.0
 
 NO_VIDEO = "no_video"
@@ -40,6 +41,12 @@ POST_IMAGES_PROMPT = (
     "These are the images from one social media post, in order. Transcribe all "
     "text visible in them exactly, image by image. Then describe what they show, "
     "in enough detail for someone who hasn't seen the post to understand it."
+)
+POST_ITEMS_PROMPT = (
+    "These are the photos and videos from one social media post, in order. Go "
+    "through them one by one: transcribe any visible text exactly, describe what's "
+    "shown, and include any spoken or sung content. Then say in a sentence or two "
+    "what the post as a whole is about."
 )
 
 
@@ -70,16 +77,34 @@ def _best_image_url(item: dict) -> str | None:
     return thumbnails[-1].get("url") if thumbnails else item.get("thumbnail")
 
 
-def classify_post(info: dict) -> tuple[str, list[str]]:
-    """("video", []) if the post starts with a video, ("images", urls) for a
-    photo post or carousel (photos only, at most _MAX_IMAGES), or ("none", [])."""
+def plan_post(info: dict) -> list[tuple[str, int, str | None]]:
+    """Every photo and video in the post, in order, as (kind, playlist index
+    starting at 1, image url or None). At most _MAX_ITEMS items, and videos
+    stop being added once they'd take the total past _MAX_VIDEO_SECONDS
+    (the first video is always kept)."""
     items = [item for item in (info.get("entries") or [info]) if item]
-    if not items:
-        return "none", []
-    if _has_video(items[0]):
-        return "video", []
-    urls = [url for url in (_best_image_url(item) for item in items if not _has_video(item)) if url]
-    return ("images", urls[:_MAX_IMAGES]) if urls else ("none", [])
+    plan, video_seconds = [], 0.0
+    for index, item in enumerate(items[:_MAX_ITEMS], start=1):
+        if _has_video(item):
+            duration = item.get("duration") or _ASSUMED_VIDEO_SECONDS
+            if video_seconds and video_seconds + duration > _MAX_VIDEO_SECONDS:
+                continue
+            video_seconds += duration
+            plan.append(("video", index, None))
+        else:
+            url = _best_image_url(item)
+            if url:
+                plan.append(("image", index, url))
+    return plan
+
+
+def prompt_for(plan: list[tuple[str, int, str | None]]) -> str:
+    kinds = {kind for kind, _, _ in plan}
+    if kinds == {"video"} and len(plan) == 1:
+        return PROMPTS[VIDEO]
+    if kinds == {"image"}:
+        return POST_IMAGES_PROMPT
+    return POST_ITEMS_PROMPT
 
 
 def _build_text(description: str, caption: str | None) -> str:
@@ -102,56 +127,57 @@ def _probe(url: str) -> dict:
         raise
 
 
-def _describe_video(url: str, api_key: str) -> str | None:
+def _download_videos(url: str, indexes: list[int], tmp_dir: str) -> dict[int, str]:
+    """{playlist index: file path} for the given videos. A single-video post
+    has no playlist index; its file comes back under index 1."""
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "outtmpl": os.path.join(tmp_dir, "%(playlist_index|1)s.%(ext)s"),
+        "format": "mp4/best",
+        "max_filesize": _MAX_FILESIZE_BYTES,
+        "playlist_items": ",".join(map(str, indexes)),
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as exc:
+        reason = classify_download_error(str(exc))
+        logger.warning("yt-dlp couldn't download %s (%s): %s", url, reason, exc)
+        if reason:
+            raise VideoUnavailable(reason) from exc
+        raise
+    files = {}
+    for name in os.listdir(tmp_dir):
+        stem = os.path.splitext(name)[0]
+        if stem.isdigit():
+            files[int(stem)] = os.path.join(tmp_dir, name)
+    return files
+
+
+def _download_image(client: httpx.Client, url: str) -> tuple[bytes, str]:
+    response = client.get(url)
+    response.raise_for_status()
+    mime_type = response.headers.get("content-type", "").split(";")[0]
+    return response.content, mime_type if mime_type.startswith("image/") else "image/jpeg"
+
+
+def _describe_post(url: str, plan: list[tuple[str, int, str | None]], api_key: str) -> str | None:
     with tempfile.TemporaryDirectory() as tmp_dir:
-        opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "outtmpl": os.path.join(tmp_dir, "%(id)s.%(ext)s"),
-            "format": "mp4/best",
-            "max_filesize": _MAX_FILESIZE_BYTES,
-            # A carousel is a playlist; only its first video is summarized.
-            "playlist_items": "1",
-        }
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.extract_info(url, download=True)
-        except yt_dlp.utils.DownloadError as exc:
-            reason = classify_download_error(str(exc))
-            logger.warning("yt-dlp couldn't download %s (%s): %s", url, reason, exc)
-            if reason:
-                raise VideoUnavailable(reason) from exc
+        video_indexes = [index for kind, index, _ in plan if kind == "video"]
+        videos = _download_videos(url, video_indexes, tmp_dir) if video_indexes else {}
+        items = []
+        with httpx.Client(timeout=_IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
+            for kind, index, image_url in plan:
+                if kind == "image":
+                    items.append(_download_image(client, image_url))
+                elif index in videos:
+                    items.append((videos[index], "video/mp4"))
+                else:
+                    logger.warning("Video %d of %s wasn't downloaded; skipping it", index, url)
+        if not items:
             return None
-
-        files = os.listdir(tmp_dir)
-        if not files:
-            logger.warning("yt-dlp reported success but no file was written for %s", url)
-            return None
-        return describe_file(
-            api_key,
-            os.path.join(tmp_dir, files[0]),
-            PROMPTS[VIDEO],
-            timeout_seconds=_DESCRIBE_TIMEOUT_SECONDS,
-            deadline_seconds=_DESCRIBE_DEADLINE_SECONDS,
-        )
-
-
-def _describe_images(urls: list[str], api_key: str) -> str | None:
-    parts = []
-    with httpx.Client(timeout=_IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-        for url in urls:
-            response = client.get(url)
-            response.raise_for_status()
-            mime_type = response.headers.get("content-type", "").split(";")[0]
-            if not mime_type.startswith("image/"):
-                mime_type = "image/jpeg"
-            parts.append(types.Part.from_bytes(data=response.content, mime_type=mime_type))
-    return generate_text(
-        api_key,
-        [*parts, POST_IMAGES_PROMPT],
-        timeout_seconds=_DESCRIBE_TIMEOUT_SECONDS,
-        deadline_seconds=_DESCRIBE_DEADLINE_SECONDS,
-    )
+        return describe_many(api_key, items, prompt_for(plan), _DESCRIBE_TIMEOUT_SECONDS, _DESCRIBE_DEADLINE_SECONDS)
 
 
 def _download_and_describe(url: str, api_key: str) -> dict | None:
@@ -159,10 +185,10 @@ def _download_and_describe(url: str, api_key: str) -> dict | None:
     are all synchronous."""
     try:
         info = _probe(url)
-        kind, image_urls = classify_post(info)
-        if kind == "none":
+        plan = plan_post(info)
+        if not plan:
             raise VideoUnavailable(NO_VIDEO)
-        description = _describe_video(url, api_key) if kind == "video" else _describe_images(image_urls, api_key)
+        description = _describe_post(url, plan, api_key)
     except (GeminiError, VideoUnavailable):
         raise
     except Exception:
