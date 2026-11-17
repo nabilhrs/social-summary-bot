@@ -23,6 +23,7 @@ from app.bot.formatting import (
     format_saved_summary,
     gemini_error_text,
 )
+from app.bot.reminders import build_picker as build_remind_picker
 from app.config import config
 from app.database.database import (
     append_note,
@@ -57,7 +58,10 @@ def build_item_actions_keyboard(item_id: int, source: str | None = None, starred
             InlineKeyboardButton("📝 Note", callback_data=f"act:note:{item_id}"),
             InlineKeyboardButton("★ Starred" if starred else "⭐ Star", callback_data=f"star:{item_id}"),
         ],
-        [InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}")],
+        [
+            InlineKeyboardButton("⏰ Remind me", callback_data=f"act:remind:{item_id}"),
+            InlineKeyboardButton("🗑 Delete", callback_data=f"delconfirm:{item_id}"),
+        ],
     ]
     if source in TRANSCRIBED_SOURCES:
         rows.insert(0, [InlineKeyboardButton("🎙 Edit transcript", callback_data=f"act:transcript:{item_id}")])
@@ -99,6 +103,10 @@ async def handle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(
             NOTE_PROMPT.format(id=item_id),
             reply_markup=ForceReply(input_field_placeholder="Your note"),
+        )
+    elif action == "remind":
+        await query.message.reply_text(
+            f"⏰ When should I remind you about #{item_id}?", reply_markup=build_remind_picker(item_id)
         )
     elif action == "transcript":
         text = item["original_text"]

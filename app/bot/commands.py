@@ -83,6 +83,7 @@ HELP_TEXT = (
     "`/delete <id>` — delete a saved item (asks for confirmation)\n"
     "`/undo <id>` — revert a merged item back to its pre-merge summary\n"
     "`/digest` — show the weekly digest now\n"
+    "`/reminders` — see or cancel reminders (tap Remind me under any summary)\n"
     "`/export` — download all your notes (readable Markdown + full JSON backup)\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
     "`/start` · `/help` — welcome message · this message\n"

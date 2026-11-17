@@ -62,6 +62,17 @@ CREATE TABLE IF NOT EXISTS pending_jobs (
 """
 
 
+_REMINDERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    remind_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(row[1] == column for row in rows)
@@ -72,6 +83,7 @@ def init_db() -> None:
         conn.execute(_SCHEMA)
         conn.execute(_USER_SETTINGS_SCHEMA)
         conn.execute(_PENDING_JOBS_SCHEMA)
+        conn.execute(_REMINDERS_SCHEMA)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
         for column in ("previous_summary", "category", "user_note"):
@@ -399,6 +411,46 @@ def reschedule_job(job_id: int, attempts: int, next_attempt_at: str) -> None:
 def delete_job(job_id: int) -> None:
     with sqlite3.connect(config.db_path) as conn:
         conn.execute("DELETE FROM pending_jobs WHERE id = ?", (job_id,))
+
+
+def add_reminder(user_id: int, item_id: int, remind_at: str) -> int:
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO reminders (user_id, item_id, remind_at, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, item_id, remind_at, datetime.now(timezone.utc).isoformat()),
+        )
+        return cursor.lastrowid
+
+
+def get_due_reminders(now_iso: str) -> list[dict]:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM reminders WHERE remind_at <= ? ORDER BY remind_at", (now_iso,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_reminders(user_id: int) -> list[dict]:
+    """Upcoming reminders, soonest first, with each item's title."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT r.id, r.item_id, r.remind_at, s.title, s.original_text FROM reminders r "
+            "JOIN summaries s ON s.id = r.item_id AND s.user_id = r.user_id "
+            "WHERE r.user_id = ? ORDER BY r.remind_at",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_reminder(reminder_id: int, user_id: int | None = None) -> bool:
+    with sqlite3.connect(config.db_path) as conn:
+        if user_id is None:
+            cursor = conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+        else:
+            cursor = conn.execute("DELETE FROM reminders WHERE id = ? AND user_id = ?", (reminder_id, user_id))
+        return cursor.rowcount > 0
 
 
 def get_user_api_key(user_id: int) -> str | None:

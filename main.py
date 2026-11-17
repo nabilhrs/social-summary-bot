@@ -18,7 +18,13 @@ from telegram.ext import (
     filters,
 )
 
-from app.bot.actions import handle_action_callback, handle_setcat_callback, handle_star_callback
+from app.bot.actions import (
+    build_item_actions_keyboard,
+    handle_action_callback,
+    handle_setcat_callback,
+    handle_star_callback,
+)
+from app.bot.reminders import handle_cancel_callback, handle_remind_callback, reminder_loop, reminders_command
 from app.bot.background import backfill_loop
 from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
@@ -76,6 +82,7 @@ _BOT_COMMANDS = [
     BotCommand("move", "Move a saved item to another category"),
     BotCommand("note", "Add your own note to a saved item"),
     BotCommand("digest", "Show your weekly digest now"),
+    BotCommand("reminders", "See or cancel your reminders"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -100,7 +107,12 @@ async def _post_init(app: Application) -> None:
         asyncio.create_task(backfill_loop(), name="backfill"),
         asyncio.create_task(digest_loop(app.bot), name="digest"),
         asyncio.create_task(retry_loop(lambda job: run_job(app.bot, job)), name="retry"),
+        asyncio.create_task(reminder_loop(app.bot, _note_keyboard), name="reminders"),
     ]
+
+
+def _note_keyboard(item: dict):
+    return build_item_actions_keyboard(item["id"], item["source"], bool(item.get("starred")))
 
 
 async def _post_stop(app: Application) -> None:
@@ -135,6 +147,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("move", move_command))
     app.add_handler(CommandHandler("note", note_command))
     app.add_handler(CommandHandler("digest", digest_command))
+    app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
@@ -160,7 +173,11 @@ def build_app() -> Application:
         CallbackQueryHandler(handle_category_callback, pattern=r"^(catmenu|catpick:.+|catopt:(rename|merge|list)|catto:.+)$")
     )
     app.add_handler(CallbackQueryHandler(handle_duplicate_callback, pattern=r"^dup:(view|again):\d+$"))
-    app.add_handler(CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note|transcript):\d+$"))
+    app.add_handler(
+        CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note|transcript|remind):\d+$")
+    )
+    app.add_handler(CallbackQueryHandler(handle_remind_callback, pattern=r"^remind:\d+:(tn|tm|wk|nw|mo)$"))
+    app.add_handler(CallbackQueryHandler(handle_cancel_callback, pattern=r"^remcancel:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
     app.add_error_handler(log_error)
 

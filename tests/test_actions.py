@@ -22,7 +22,7 @@ def _buttons(markup):
 
 def test_item_actions_keyboard_callback_data():
     data = [button.callback_data for button in _buttons(build_item_actions_keyboard(12))]
-    assert data == ["act:rename:12", "act:cat:12", "act:note:12", "star:12", "delconfirm:12"]
+    assert data == ["act:rename:12", "act:cat:12", "act:note:12", "star:12", "act:remind:12", "delconfirm:12"]
 
 
 def test_star_button_label_reflects_state():
