@@ -546,3 +546,24 @@ onboarding, encrypting stored API keys) was deliberately skipped.
 - ✅ Note reminders gain "🕐 Other time…" (typed time, same parser)
 - ✅ `reminders` table migrated so `item_id` can be empty (plain reminders
   store `text`); existing reminders are copied over
+
+## Feature batch 4 (#7)
+
+- ✅ **Error alerts** (`app/bot/alerts.py`): a logging handler forwards
+  ERROR records that carry exception info, from the app's own loggers, to
+  the owner on Telegram (where, what, error type). Repeats of the same
+  error are muted for an hour. Handled situations (busy Gemini retried
+  later) log without exception info and stay quiet; library network blips
+  are ignored. Unhandled update errors now log a short description
+  ("the command /list", "a button tap (star:4)") instead of the whole update
+- ✅ **Quota estimate**: successful Gemini requests counted per model per
+  Pacific day (`gemini_usage` table); the count when a model first hits
+  its daily limit is remembered as that model's limit (no hard-coded
+  numbers); a heads-up 3 requests before the main model's learned limit;
+  `/usage` shows today's counts, learned limits, hours to reset and
+  pending retries
+- ✅ Tests always run against a throwaway database (`tests/conftest.py`),
+  so usage counting in tests can't touch the real `summarizer.db`
+- ⚠️ The quota numbers are estimates (successful requests only); the first
+  heads-up only comes after a model has run out once
+- ⚠️ Alert delivery not yet seen live

@@ -177,6 +177,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 | `/remind <when> <what>` | A reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` |
 | `/reminders` | See or cancel upcoming reminders |
 | `/export` | Download all your notes |
+| `/usage` | Today's Gemini requests per model, and saves waiting to retry |
 | `/setkey <key>` | Use a different Gemini API key |
 | `/help` | Short version of this guide |
 
@@ -186,6 +187,12 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 **It says Gemini is busy, or the daily quota is used up.**
 You don't need to do anything. The bot keeps what you sent and tries again by itself: after 2 minutes, then 5, 15, 30 and 60. If the daily quota ran out, it waits until the quota resets (midnight Pacific time, 3 or 4pm in Malaysia). When it works, the summary arrives as a reply to your original message. If Gemini is still unavailable after about two hours of trying, the bot tells you it stopped, and you can send it again later. This applies to things you send to be saved; `/ask`, merges and transcript edits just tell you to try again.
+
+**How much Gemini quota have I used today?**
+Send `/usage`. It shows today's requests per model and how many saves are waiting to retry. Gemini doesn't say how much quota is left, so the bot counts its own requests, and the first time a model runs out it remembers that number as the limit. After that, it sends you a heads-up when the main model is 3 requests away from running out.
+
+**I got a "⚠️ Something broke" message.**
+The bot hit an unexpected error and is telling you right away instead of failing silently. The message says roughly where it happened. If the same error keeps happening it's muted for an hour, so you won't get a flood. The full details are in the server log (`journalctl -u social-summary-bot -n 100`).
 
 **An Instagram link didn't work.**
 If the bot says it needs a login, the post is private, a story, or Instagram is limiting the server. Send a screenshot or the video file itself and the bot reads that instead.
