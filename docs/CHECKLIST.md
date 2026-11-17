@@ -567,3 +567,25 @@ onboarding, encrypting stored API keys) was deliberately skipped.
 - ⚠️ The quota numbers are estimates (successful requests only); the first
   heads-up only comes after a model has run out once
 - ⚠️ Alert delivery not yet seen live
+
+## Feature batch 5 (#10, #14 light)
+
+- ✅ **To-dos from notes** (`app/bot/todos.py`): the summary prompt also
+  asks for a `TODO:` tag line (up to 3 specific action items, or NONE), so
+  it costs no extra Gemini request. Stored in a new `todos` table; the saved
+  reply lists what was added. `/todo` shows open items oldest first with a
+  ✅ button each (tap to tick off, with ↩️ Undo); `/todo <text>` adds your
+  own (" | " adds several). Deleting a note deletes its to-dos; a corrected
+  transcript replaces the note's unticked to-dos
+- ✅ **Review mode, light** (`app/bot/review.py`): `/review` shows one note
+  at least 7 days old, title first ("Do you remember this one?"), then the
+  summary on 👀 Reveal, then 👍 Still useful (not shown again for 30 days)
+  or 📦 Archive. Never-reviewed notes come first. No Gemini requests
+- ✅ **Archive**: `archived` and `reviewed_at` columns on `summaries`.
+  Archived notes are left out of `/list` (they get a 📦 Archived entry),
+  category counts in `/list`, `/review` and the digest throwback; `/search`,
+  `/ask`, `/view` and exports still include them. 📤 Unarchive button on an
+  archived note
+- ⚠️ Notes saved before this batch have no to-dos (no backfill, to save quota)
+- ⚠️ To-dos aren't in the JSON backup yet
+- ⚠️ Not yet tried in the real Telegram app

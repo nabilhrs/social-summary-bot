@@ -94,6 +94,8 @@ You can also merge any two notes yourself: `/merge 4 13` keeps #4 and folds #13 
 
 **Read one in full:** `/view 13`.
 
+**Archived notes:** notes you archive from `/review` leave the normal lists and get their own **📦 Archived** entry at the bottom of the `/list` menu. `/search`, `/ask` and `/view` still find them. Open one and tap **📤 Unarchive** to bring it back.
+
 **Ask a question:** `/ask` answers from your saved notes only, and shows which notes it used. For example:
 
 > `/ask what were the tips for introducing myself in an interview?`
@@ -104,7 +106,26 @@ Ask in English or Malay and it answers in the same language. If your notes don't
 
 ---
 
-## 7. Reminders and the weekly digest
+## 7. To-dos and review
+
+**To-dos:** when something you save suggests a specific thing to do, like a restaurant to try, a product to buy, a book to read or a deadline to apply by, the bot adds it to your to-do list and says so under the summary (**☑️ Added to /todo**). General advice ("drink more water") isn't added. Up to 3 per note, and it costs no extra Gemini quota because it's part of the same request as the summary.
+
+- `/todo` shows the list, oldest first, with the note each one came from ("— from #12").
+- Tap **✅** on one when it's done. The list updates, with **↩️ Undo** in case you tapped the wrong one.
+- `/todo buy batteries` adds your own. `/todo buy batteries | call mum` adds two.
+- Deleting a note removes its to-dos too. Notes saved before this feature have no to-dos.
+
+**Review:** `/review` picks one note that's at least a week old and shows only its title: **do you remember this one?** Think about it, then tap **👀 Reveal** to see the summary and check yourself.
+
+- **👍 Still useful** keeps it; it won't come up again for about a month.
+- **📦 Archive** moves it out of `/list`, `/review` and the weekly digest. It isn't deleted: `/search` and `/ask` still use it, and **↩️ Undo** or **📤 Unarchive** brings it back.
+- **⏭ Skip** or **🧠 Next note** moves on without deciding.
+
+Notes you've never reviewed come up before ones you kept a month ago. Review uses no Gemini quota.
+
+---
+
+## 8. Reminders and the weekly digest
 
 **Any reminder, not just notes:** `/remind <when> <what>` sets a plain reminder, in English or Malay. You can also just send a message starting with "remind me" or "ingatkan saya".
 
@@ -132,7 +153,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ---
 
-## 8. Backing up
+## 9. Backing up
 
 **Automatic:** every Sunday, right after the digest, the bot sends `notes-backup-<date>.json`, a complete copy of all your notes. Keep it (Telegram keeps it in the chat too), and your notes never live only on the server.
 
@@ -143,7 +164,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ---
 
-## 9. Limits to know about
+## 10. Limits to know about
 
 | What | Limit |
 |---|---|
@@ -156,7 +177,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ---
 
-## 10. Quick reference
+## 11. Quick reference
 
 | Command | What it does |
 |---|---|
@@ -176,6 +197,8 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 | `/digest` | Show the weekly digest now |
 | `/remind <when> <what>` | A reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` |
 | `/reminders` | See or cancel upcoming reminders |
+| `/todo` · `/todo <text>` | Your to-do list, or add one |
+| `/review` | Revisit one older note: keep it or archive it |
 | `/export` | Download all your notes |
 | `/usage` | Today's Gemini requests per model, and saves waiting to retry |
 | `/setkey <key>` | Use a different Gemini API key |
@@ -183,7 +206,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ---
 
-## 11. FAQ
+## 12. FAQ
 
 **It says Gemini is busy, or the daily quota is used up.**
 You don't need to do anything. The bot keeps what you sent and tries again by itself: after 2 minutes, then 5, 15, 30 and 60. If the daily quota ran out, it waits until the quota resets (midnight Pacific time, 3 or 4pm in Malaysia). When it works, the summary arrives as a reply to your original message. If Gemini is still unavailable after about two hours of trying, the bot tells you it stopped, and you can send it again later. This applies to things you send to be saved; `/ask`, merges and transcript edits just tell you to try again.

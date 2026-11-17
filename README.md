@@ -11,6 +11,8 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
 - **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star, ⏰ Remind me and 🗑 Delete buttons. `/starred` lists your favourites.
 - **Reminders.** ⏰ Remind me brings a note back at a preset or typed time, and `/remind <when> <what>` sets any reminder, no note needed, in English or Malay ("tomorrow 7am dentist", "esok pukul 8 pagi temujanji doktor", "2 jam lagi angkat kain"). Times are read by a rule-based parser, so they work instantly and without Gemini. `/reminders` lists and cancels them.
+- **To-dos from your notes.** When a note suggests something to do (a café to try, a book to read, a form to submit), it goes on your `/todo` list; tap one to tick it off. It's asked for in the same Gemini request as the summary, so it costs no extra quota. `/todo <text>` adds your own.
+- **Review mode.** `/review` brings back one note that's at least a week old and asks if you remember it, then shows the summary. **👍 Still useful** keeps it (it comes back in a month); **📦 Archive** takes it out of `/list` and reviews, though `/search` and `/ask` still find it. No Gemini requests.
 - **Never summarizes the same link twice.** A link you've already saved (even with a different share suffix) gets "Already saved as #41" instead of spending Gemini quota, with buttons to view it or save it again.
 - **Correct what it heard.** Voice note and audio summaries show the transcript (tap to expand) and a 🎙 Edit transcript button: send back the corrected text and the summary and title are rewritten from it.
 - **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
@@ -225,6 +227,8 @@ Code layout:
 | `app/bot/background.py` | Fills in titles and categories for older notes |
 | `app/bot/retry.py` | Keeps saves that hit a busy Gemini and retries them later |
 | `app/bot/reminders.py` | ⏰ Remind me, `/remind` and `/reminders` |
+| `app/bot/todos.py` | `/todo` checklist |
+| `app/bot/review.py` | `/review`, archiving and unarchiving |
 | `app/bot/timeparse.py` | Reads reminder times in English and Malay |
 | `app/bot/categories.py` | `/categories`: rename and merge categories |
 | `app/bot/alerts.py` | Error alerts and heads-ups sent to the owner |
