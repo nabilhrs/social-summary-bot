@@ -62,6 +62,19 @@ CREATE TABLE IF NOT EXISTS pending_jobs (
 """
 
 
+# Successful Gemini requests per model per quota day (Pacific date, when the
+# free quota resets), and how many had been made when the daily quota ran
+# out. Gemini doesn't report remaining quota, so this is how it's estimated.
+_GEMINI_USAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS gemini_usage (
+    day TEXT NOT NULL,
+    model TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    ran_out_at INTEGER,
+    PRIMARY KEY (day, model)
+);
+"""
+
 # A reminder points at a saved item (item_id) or is just text (/remind).
 _REMINDERS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS reminders (
@@ -101,6 +114,7 @@ def init_db() -> None:
         conn.execute(_USER_SETTINGS_SCHEMA)
         conn.execute(_PENDING_JOBS_SCHEMA)
         conn.execute(_REMINDERS_SCHEMA)
+        conn.execute(_GEMINI_USAGE_SCHEMA)
         if not _column_exists(conn, "reminders", "text"):
             conn.executescript(_REMINDERS_MIGRATION)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
@@ -471,6 +485,49 @@ def delete_reminder(reminder_id: int, user_id: int | None = None) -> bool:
         else:
             cursor = conn.execute("DELETE FROM reminders WHERE id = ? AND user_id = ?", (reminder_id, user_id))
         return cursor.rowcount > 0
+
+
+def record_gemini_request(day: str, model: str) -> int:
+    """Counts one successful request; returns today's count for the model."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "INSERT INTO gemini_usage (day, model, requests) VALUES (?, ?, 1) "
+            "ON CONFLICT(day, model) DO UPDATE SET requests = requests + 1",
+            (day, model),
+        )
+        return conn.execute(
+            "SELECT requests FROM gemini_usage WHERE day = ? AND model = ?", (day, model)
+        ).fetchone()[0]
+
+
+def record_quota_ran_out(day: str, model: str) -> None:
+    """Remembers how many requests had been made when the daily quota ran out (first time only)."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "INSERT INTO gemini_usage (day, model, requests, ran_out_at) VALUES (?, ?, 0, 0) "
+            "ON CONFLICT(day, model) DO UPDATE SET ran_out_at = COALESCE(ran_out_at, requests)",
+            (day, model),
+        )
+
+
+def get_gemini_usage(day: str) -> dict[str, int]:
+    with sqlite3.connect(config.db_path) as conn:
+        return dict(conn.execute("SELECT model, requests FROM gemini_usage WHERE day = ?", (day,)).fetchall())
+
+
+def get_learned_limits() -> dict[str, int]:
+    """Per model, the highest count at which the daily quota ran out (0s ignored)."""
+    with sqlite3.connect(config.db_path) as conn:
+        return dict(
+            conn.execute(
+                "SELECT model, MAX(ran_out_at) FROM gemini_usage WHERE ran_out_at > 0 GROUP BY model"
+            ).fetchall()
+        )
+
+
+def count_pending_jobs(user_id: int) -> int:
+    with sqlite3.connect(config.db_path) as conn:
+        return conn.execute("SELECT COUNT(*) FROM pending_jobs WHERE user_id = ?", (user_id,)).fetchone()[0]
 
 
 def get_user_api_key(user_id: int) -> str | None:

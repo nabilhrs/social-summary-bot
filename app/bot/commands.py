@@ -12,12 +12,16 @@ from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
-from app.ai.gemini import QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text
+from app.ai.gemini import MODELS, QUOTA_DAILY, QUOTA_RATE, UNAVAILABLE, GeminiError, generate_text, quota_day
+from app.bot.retry import next_quota_reset
 from app.ai.summarizer import answer_question, clean_category, clean_title
 from app.config import config
 from app.database.database import (
     append_note,
     count_items,
+    count_pending_jobs,
+    get_gemini_usage,
+    get_learned_limits,
     get_all_items,
     get_categories,
     update_fields,
@@ -86,6 +90,7 @@ HELP_TEXT = (
     "`/remind <when> <what>` — a reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` or `/remind esok pukul 3 petang mesyuarat`\n"
     "`/reminders` — see or cancel reminders (or tap Remind me under any summary)\n"
     "`/export` — download all your notes (readable Markdown + full JSON backup)\n"
+    "`/usage` — today's Gemini requests per model, and saves waiting to retry\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
     "`/start` · `/help` — welcome message · this message\n"
 )
@@ -368,6 +373,32 @@ async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     if not await send_digest(context.bot, user_id):
         await update.message.reply_text("Nothing to show yet — save a few notes first.")
+
+
+def build_usage_text(usage: dict[str, int], limits: dict[str, int], pending: int, hours_to_reset: int) -> str:
+    lines = [f"📊 Gemini requests today (the free quota resets in about {hours_to_reset} h, at midnight Pacific):"]
+    for model in MODELS:
+        limit = limits.get(model)
+        lines.append(f"• {model}: {usage.get(model, 0)}" + (f" of about {limit}" if limit else ""))
+    if not any(limits.get(model) for model in MODELS):
+        lines.append("\nI learn each model's daily limit the first time it runs out, then warn you before it does.")
+    if pending:
+        lines.append(f"\n⏳ {pending} save(s) waiting to be retried.")
+    lines.append("\nThese are my own counts of successful requests; Gemini doesn't report how much quota is left.")
+    return "\n".join(lines)
+
+
+async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None or not config.is_authorized(user_id):
+        await update.message.reply_text("Sorry, this bot is private.")
+        return
+    now = datetime.now(timezone.utc)
+    usage = await asyncio.to_thread(get_gemini_usage, quota_day(now))
+    limits = await asyncio.to_thread(get_learned_limits)
+    pending = await asyncio.to_thread(count_pending_jobs, user_id)
+    hours = max(1, round((next_quota_reset(now) - now).total_seconds() / 3600))
+    await update.message.reply_text(build_usage_text(usage, limits, pending, hours))
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -10,12 +10,21 @@ the bot working instead of failing on the first error. A retired model
 import io
 import logging
 import time
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from google import genai
 from google.genai import errors, types
 
+from app.bot import alerts
+from app.database.database import get_learned_limits, record_gemini_request, record_quota_ran_out
+
 logger = logging.getLogger(__name__)
+
+# The free quota resets at midnight Pacific time, so usage is counted per Pacific date.
+_QUOTA_TZ = ZoneInfo("America/Los_Angeles")
+QUOTA_WARNING_MARGIN = 3
 
 MODELS = ("gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 
@@ -47,6 +56,33 @@ class GeminiError(Exception):
 
 def _is_invalid_key(exc: errors.APIError) -> bool:
     return exc.code in (401, 403) or (exc.code == 400 and "API key not valid" in str(exc))
+
+
+def quota_day(now: datetime | None = None) -> str:
+    return (now or datetime.now(timezone.utc)).astimezone(_QUOTA_TZ).date().isoformat()
+
+
+def _track_success(model: str) -> None:
+    """Counts the request and, once the main model's daily limit has been
+    learned, warns the owner when it's QUOTA_WARNING_MARGIN requests away."""
+    try:
+        used = record_gemini_request(quota_day(), model)
+        limit = get_learned_limits().get(model)
+        if model == MODELS[0] and limit and used == limit - QUOTA_WARNING_MARGIN:
+            alerts.notify(
+                f"📊 Heads-up: {model} has used {used} of about {limit} free requests today. "
+                "After that the backup models take over; the quota resets at midnight Pacific time. "
+                "See /usage."
+            )
+    except Exception as exc:  # usage tracking must never break a request
+        logger.warning("Couldn't record Gemini usage: %s", exc)
+
+
+def _track_ran_out(model: str) -> None:
+    try:
+        record_quota_ran_out(quota_day(), model)
+    except Exception as exc:
+        logger.warning("Couldn't record Gemini quota: %s", exc)
 
 
 def _pause_before_retry(attempt: int, attempts: int) -> None:
@@ -103,6 +139,8 @@ def generate_text(
                     if exc.code == 429:
                         kind = QUOTA_DAILY if "PerDay" in str(exc) else QUOTA_RATE
                         logger.warning("%s quota exhausted (%s), trying next model", model, kind)
+                        if kind == QUOTA_DAILY:
+                            _track_ran_out(model)
                         failures.append(kind)
                         done_with.add(model)
                         break
@@ -136,6 +174,7 @@ def generate_text(
                 if text:
                     if model != MODELS[0]:
                         logger.info("Served by fallback model %s", model)
+                    _track_success(model)
                     return text
                 logger.warning("%s returned an empty response, trying next model", model)
                 failures.append(FAILED)

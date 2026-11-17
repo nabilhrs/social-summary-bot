@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 
-from telegram import BotCommand
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -32,6 +32,7 @@ from app.bot.reminders import (
     reminder_loop,
     reminders_command,
 )
+from app.bot import alerts
 from app.bot.background import backfill_loop
 from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
@@ -53,6 +54,7 @@ from app.bot.commands import (
     note_command,
     digest_command,
     starred_command,
+    usage_command,
     setkey_command,
     handle_quick_action_callback,
     handle_list_callback,
@@ -85,6 +87,7 @@ _BOT_COMMANDS = [
     BotCommand("delete", "Delete a saved item"),
     BotCommand("undo", "Revert a merged item to its pre-merge summary"),
     BotCommand("export", "Download all your notes as files"),
+    BotCommand("usage", "Today's Gemini usage"),
     BotCommand("rename", "Rename a saved item"),
     BotCommand("move", "Move a saved item to another category"),
     BotCommand("note", "Add your own note to a saved item"),
@@ -103,12 +106,31 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+def describe_update(update: object) -> str:
+    """Short and readable for the owner alert; the full update goes to the debug log."""
+    if isinstance(update, Update):
+        if update.callback_query is not None:
+            return f"a button tap ({update.callback_query.data})"
+        message = update.effective_message
+        if message is not None:
+            text = message.text or message.caption or ""
+            if text.startswith("/"):
+                return f"the command {text.split()[0]}"
+            return "a message" if text else "a file or photo"
+    return "a background task" if update is None else "an update"
+
+
 async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error("Unhandled exception while processing update: %s", update, exc_info=context.error)
+    logger.debug("Update that failed: %s", update)
+    logger.error("Unhandled exception while handling %s", describe_update(update), exc_info=context.error)
 
 
 async def _post_init(app: Application) -> None:
     await app.bot.set_my_commands(_BOT_COMMANDS)
+    alerts.configure(app.bot, config.authorized_user_ids[0], asyncio.get_running_loop())
+    alert_handler = alerts.AlertHandler()
+    logging.getLogger().addHandler(alert_handler)
+    app.bot_data["alert_handler"] = alert_handler
     # Plain asyncio tasks, cancelled in _post_stop: Application.create_task
     # warns when called before the app is running and leaves them pending at exit.
     app.bot_data["background_tasks"] = [
@@ -128,6 +150,8 @@ async def _post_stop(app: Application) -> None:
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    if "alert_handler" in app.bot_data:
+        logging.getLogger().removeHandler(app.bot_data.pop("alert_handler"))
 
 
 def build_app() -> Application:
@@ -157,6 +181,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("remind", remind_command))
+    app.add_handler(CommandHandler("usage", usage_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
