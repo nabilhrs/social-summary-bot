@@ -20,6 +20,7 @@ from telegram.ext import (
 
 from app.bot.actions import handle_action_callback, handle_setcat_callback, handle_star_callback
 from app.bot.background import backfill_loop
+from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
 from app.bot.retry import retry_loop
 from app.config import config
@@ -63,6 +64,7 @@ _BOT_COMMANDS = [
     BotCommand("help", "Show what I can do"),
     BotCommand("list", "Browse your notes by category"),
     BotCommand("starred", "Show your starred notes"),
+    BotCommand("categories", "Rename or merge your categories"),
     BotCommand("search", "Search your saved items"),
     BotCommand("ask", "Ask a question about your saved notes"),
     BotCommand("view", "Show the full summary for a saved item"),
@@ -121,6 +123,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("starred", starred_command))
+    app.add_handler(CommandHandler("categories", categories_command))
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("view", view_command))
@@ -153,6 +156,9 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
     app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[ausc].*)$"))
     app.add_handler(CallbackQueryHandler(handle_star_callback, pattern=r"^star:\d+$"))
+    app.add_handler(
+        CallbackQueryHandler(handle_category_callback, pattern=r"^(catmenu|catpick:.+|catopt:(rename|merge|list)|catto:.+)$")
+    )
     app.add_handler(CallbackQueryHandler(handle_duplicate_callback, pattern=r"^dup:(view|again):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note|transcript):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))

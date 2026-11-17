@@ -77,6 +77,7 @@ HELP_TEXT = (
     "`/view <id>` — show the full summary for a saved item\n"
     "`/rename <id> <title>` — change an item's title\n"
     "`/move <id> <category>` — move an item to another (or a new) category\n"
+    "`/categories` — rename a category, or merge one into another\n"
     "`/note <id> <text>` — add your own note to an item (`clear` removes it)\n"
     "`/merge <keep_id> <absorb_id>` — merge two saved items into one (asks for confirmation)\n"
     "`/delete <id>` — delete a saved item (asks for confirmation)\n"

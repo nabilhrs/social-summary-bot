@@ -163,6 +163,16 @@ def _scope_filter(user_id: int, category: str | None, uncategorized: bool, starr
     return "user_id = ?", (user_id,)
 
 
+def rename_category(user_id: int, old: str, new: str) -> int:
+    """Moves every item in `old` to `new` (a rename, or a merge if `new`
+    already exists). Returns how many items moved."""
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET category = ? WHERE user_id = ? AND category = ?", (new, user_id, old)
+        )
+        return cursor.rowcount
+
+
 def toggle_star(row_id: int, user_id: int) -> bool | None:
     """Flips the star; returns the new state, or None if the item isn't the user's."""
     with sqlite3.connect(config.db_path) as conn:
