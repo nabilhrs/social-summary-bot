@@ -264,6 +264,33 @@ tool you use (`software-properties-common`) instead of assuming it's there.
 
 ---
 
+## 11. "Gemini is overloaded" even though backup models exist
+
+**Symptom:** Users got the overloaded message after a long wait, and the
+backup models seemed never to help.
+
+**Cause:** The VM logs showed `gemini-3.6-flash returned 504` arriving
+about 90 seconds after each request, and timeouts that took just as long.
+The retry policy treated every busy error the same: try the same model
+twice. Two slow failures on the main model used up the whole deadline, so
+the fallback models were often never called (e.g. 13:59:25 and 14:00:56:
+both attempts on the main model, then the deadline ran out).
+
+**Fix:** `generate_text()` retries only *fast* busy errors (500/502/503)
+on the same model. A 504 or a timeout moves straight to the next model. If
+every model was busy and time remains, it pauses 20 s and tries one more
+round, skipping models that are out of quota or retired. On top of that,
+when Gemini is still busy (or out of quota), new saves are kept as
+pending jobs and retried in the background (`app/bot/retry.py`) instead of
+asking the user to resend.
+
+**Lesson:** Retry policy has to account for how long a failure takes, not
+just what kind it is. A cheap retry for a 1-second 503 is an expensive one
+for a 90-second 504. Read the timestamps in the logs, not just the error
+codes.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The

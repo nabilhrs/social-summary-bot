@@ -17,7 +17,7 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 - **Ask your notes.** `/ask` answers a question using only what you've saved, and cites the notes it used, e.g. `(#12)`. It answers in the language you ask in.
 - **Weekly digest.** Every Sunday at 9am, the week's saves grouped by category plus one older note to revisit.
 - **Your data, backed up.** The Sunday digest comes with a complete JSON backup, and `/export` sends a readable Markdown file plus the backup any time.
-- **Keeps working when Gemini is busy.** Temporary errors are retried, and the bot falls back to lighter models, each with its own free quota. If everything fails, it tells you why: daily quota used up, rate limit, rejected key or overloaded.
+- **Keeps working when Gemini is busy.** Quick errors are retried, slow ones move straight to lighter backup models (each with its own free quota), and if every model is busy it tries another round. If Gemini is still busy or out of quota, what you sent is kept and summarized automatically later (after 2, 5, 15, 30 then 60 minutes, or after the daily quota resets), so you never have to resend it.
 
 How to use the bot: see [USER_GUIDE.md](USER_GUIDE.md).
 

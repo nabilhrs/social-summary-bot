@@ -498,3 +498,21 @@ onboarding, encrypting stored API keys) was deliberately skipped.
 - ⚠️ The album buffer is in memory: if the bot restarts within those 1.5 s,
   that album needs resending. Telegram-side behaviour not yet checked in the
   real app
+
+## Busy-Gemini handling
+
+- ✅ **Smarter retries** (`generate_text`): fast 500/502/503 get one retry on
+  the same model; a 504 or timeout (each ~90 s, seen in the VM logs) moves
+  straight to the next model; if every model was busy and time remains,
+  a 20 s pause and one more round, skipping models out of quota or retired.
+  Default summary deadline raised to 120 s. See `memory.md` #11
+- ✅ **Retry later automatically** (`app/bot/retry.py`): when a new save
+  still fails because Gemini is busy or out of quota, the text/link or the
+  Telegram file ids are stored in `pending_jobs` and retried in the
+  background after 2, 5, 15, 30 and 60 minutes (a used-up daily quota waits
+  for the midnight-Pacific reset). The summary arrives as a reply to the
+  original message; progress messages aren't repeated on retries. Gives up
+  with a message after 6 tries. Survives restarts
+- ⚠️ `/ask`, merges and transcript edits still just report the error
+- ⚠️ Background retries covered by unit and end-to-end tests with a fake
+  Telegram bot; not yet seen live

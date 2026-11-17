@@ -158,8 +158,8 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 
 ## 11. FAQ
 
-**It says Gemini is overloaded or out of quota.**
-The bot already retried and tried two backup models. For "overloaded", wait a few minutes. For "today's free quota", it resets at midnight Pacific time. Nothing you sent is lost; send it again later.
+**It says Gemini is busy, or the daily quota is used up.**
+You don't need to do anything. The bot keeps what you sent and tries again by itself: after 2 minutes, then 5, 15, 30 and 60. If the daily quota ran out, it waits until the quota resets (midnight Pacific time, 3 or 4pm in Malaysia). When it works, the summary arrives as a reply to your original message. If Gemini is still unavailable after about two hours of trying, the bot tells you it stopped, and you can send it again later. This applies to things you send to be saved; `/ask`, merges and transcript edits just tell you to try again.
 
 **An Instagram link didn't work.**
 If the bot says it needs a login, the post is private, a story, or Instagram is limiting the server. Send a screenshot or the video file itself and the bot reads that instead.
