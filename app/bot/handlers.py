@@ -32,6 +32,7 @@ from app.extractors.threads import fetch_and_extract as fetch_threads_post
 from app.extractors.video_link import NO_VIDEO, VideoUnavailable, fetch_and_extract as fetch_video_link
 from app.extractors.youtube import fetch_and_extract as fetch_youtube_video
 from app.extractors.media import (
+    ALBUM_PROMPT,
     AUDIO,
     IMAGE,
     MAX_DOWNLOAD_BYTES,
@@ -43,7 +44,7 @@ from app.extractors.media import (
     classify_document,
     extract_text,
 )
-from app.ai.gemini import FAILED, GeminiError
+from app.ai.gemini import FAILED, TEXT_ITEM, GeminiError, describe_many
 from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
 from app.bot.browse import display_title
@@ -107,6 +108,7 @@ MEDIA_PROCESSING_TEXTS = {
     PDF: "📄 Reading your PDF — this may take a moment...",
     TEXT: "📄 Reading your file...",
 }
+ALBUM_PROCESSING_TEXT = "📎 Reading your {count} files together{note} — this may take a moment..."
 UNSUPPORTED_FILE_TEXT = (
     "I can't read this file type. I can summarize PDFs, plain-text files, "
     "images, audio, and video."
@@ -356,6 +358,9 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     file_obj, info = _media_info(message)
+    if message.media_group_id:
+        queue_album_item(message, user.id, file_obj, info)
+        return
     if info is None:
         await message.reply_text(UNSUPPORTED_FILE_TEXT)
         return
@@ -394,6 +399,65 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "text": build_media_text(extracted, message.caption),
     }
     await _summarize_and_save(message, user.id, api_key, content)
+
+
+# Telegram delivers an album (several files sent together) as separate
+# messages sharing a media_group_id, with no "last one" marker. They're
+# collected here until _ALBUM_WAIT_SECONDS pass with no new item, then read
+# as one note. This is the one place state is held in memory between
+# updates (see docs/memory.md #5): it only lasts seconds, and if the bot
+# restarts mid-album, that album just needs resending.
+_ALBUM_WAIT_SECONDS = 1.5
+_albums: dict[str, list] = {}
+_album_timers: dict[str, asyncio.Task] = {}
+
+
+def queue_album_item(message: Message, user_id: int, file_obj, info) -> None:
+    group_id = message.media_group_id
+    _albums.setdefault(group_id, []).append((message, file_obj, info))
+    timer = _album_timers.pop(group_id, None)
+    if timer is not None:
+        timer.cancel()
+    _album_timers[group_id] = asyncio.create_task(_flush_album_later(group_id, user_id))
+
+
+async def _flush_album_later(group_id: str, user_id: int) -> None:
+    await asyncio.sleep(_ALBUM_WAIT_SECONDS)
+    _album_timers.pop(group_id, None)
+    parts = sorted(_albums.pop(group_id, []), key=lambda part: part[0].message_id)
+    if parts:
+        await process_album(parts, user_id)
+
+
+async def process_album(parts: list, user_id: int) -> None:
+    reply_to = parts[0][0]
+    try:
+        usable = [p for p in parts if p[2] is not None and not (p[2].file_size and p[2].file_size > MAX_DOWNLOAD_BYTES)]
+        skipped = len(parts) - len(usable)
+        if not usable:
+            await reply_to.reply_text(UNSUPPORTED_FILE_TEXT)
+            return
+        api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
+        if api_key is None:
+            await reply_to.reply_text(NO_API_KEY_TEXT)
+            return
+
+        note = f" (skipping {skipped} I can't read)" if skipped else ""
+        await reply_to.reply_text(ALBUM_PROCESSING_TEXT.format(count=len(usable), note=note))
+        items = []
+        for _message, file_obj, info in usable:
+            data = bytes(await (await file_obj.get_file()).download_as_bytearray())
+            items.append((data.decode("utf-8", errors="replace"), TEXT_ITEM) if info.kind == TEXT else (data, info.mime_type))
+        extracted = await asyncio.to_thread(describe_many, api_key, items, ALBUM_PROMPT, 90, 150)
+
+        caption = next((m.caption for m, _, _ in parts if m.caption), None)
+        content = {"title": None, "author": None, "source": "album", "url": None, "text": build_media_text(extracted, caption)}
+        await _summarize_and_save(reply_to, user_id, api_key, content)
+    except GeminiError as exc:
+        await reply_to.reply_text(gemini_error_text(exc))
+    except Exception:
+        logger.exception("Processing an album of %d file(s) failed", len(parts))
+        await reply_to.reply_text(MEDIA_DOWNLOAD_FAILED_TEXT)
 
 
 async def handle_unsupported(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

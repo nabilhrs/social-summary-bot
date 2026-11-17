@@ -36,6 +36,13 @@ PROMPTS = {
     ),
 }
 
+ALBUM_PROMPT = (
+    "These files were sent together as one message, in order (photos, videos, "
+    "documents or audio). Go through them one by one: transcribe all visible or "
+    "spoken text exactly, and describe anything else needed to understand it. "
+    "Then say in a sentence or two what they're about together."
+)
+
 _EXTRACT_TIMEOUT_SECONDS = 90
 _EXTRACT_DEADLINE_SECONDS = 150
 
