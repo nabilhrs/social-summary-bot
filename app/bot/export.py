@@ -18,6 +18,7 @@ _EXPORTED_FIELDS = (
     "category",
     "user_note",
     "starred",
+    "archived",
 )
 
 

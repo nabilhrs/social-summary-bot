@@ -31,7 +31,7 @@ from app.database.database import (
     set_user_api_key,
     resolve_gemini_api_key,
 )
-from app.bot.actions import build_item_actions_keyboard
+from app.bot.actions import keyboard_for_item
 from app.bot.browse import CATEGORY, MENU_CALLBACK, STARRED, decode_page, format_item_line, render_menu, render_page
 from app.bot.digest import send_digest
 from app.bot.export import build_json, build_markdown
@@ -90,6 +90,7 @@ HELP_TEXT = (
     "`/remind <when> <what>` — a reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` or `/remind esok pukul 3 petang mesyuarat`\n"
     "`/reminders` — see or cancel reminders (or tap Remind me under any summary)\n"
     "`/todo` — things to do that I spotted in your notes; tap one to tick it off. `/todo <text>` adds your own\n"
+    "`/review` — revisit one older note: try to remember it, then keep it or archive it out of `/list`\n"
     "`/export` — download all your notes (readable Markdown + full JSON backup)\n"
     "`/usage` — today's Gemini requests per model, and saves waiting to retry\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"
@@ -443,7 +444,7 @@ async def view_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(
-        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=build_item_actions_keyboard(item_id, item["source"], bool(item.get("starred")))
+        format_full_item(item), parse_mode=ParseMode.HTML, reply_markup=keyboard_for_item(item)
     )
 
 

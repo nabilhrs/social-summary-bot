@@ -75,7 +75,7 @@ from app.database.database import (
     delete_item,
     resolve_gemini_api_key,
 )
-from app.bot.actions import apply_reply_edit, build_item_actions_keyboard
+from app.bot.actions import apply_reply_edit, build_item_actions_keyboard, keyboard_for_item
 from app.bot.categories import apply_category_rename
 from app.bot.reminders import create_text_reminder, natural_reminder_request
 from app.bot.formatting import (
@@ -223,7 +223,7 @@ async def handle_duplicate_callback(update: Update, context: ContextTypes.DEFAUL
         await query.message.reply_text(
             format_full_item(item),
             parse_mode=ParseMode.HTML,
-            reply_markup=build_item_actions_keyboard(item["id"], item["source"], bool(item.get("starred"))),
+            reply_markup=keyboard_for_item(item),
         )
         return
     await query.edit_message_reply_markup(reply_markup=None)

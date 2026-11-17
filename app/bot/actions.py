@@ -50,7 +50,15 @@ _TRANSCRIPT_PROMPT_RE = re.compile(r"^🎙 Reply with the corrected transcript f
 MAX_EDITABLE_TRANSCRIPT = 3500
 
 
-def build_item_actions_keyboard(item_id: int, source: str | None = None, starred: bool = False) -> InlineKeyboardMarkup:
+def keyboard_for_item(item: dict) -> InlineKeyboardMarkup:
+    return build_item_actions_keyboard(
+        item["id"], item.get("source"), bool(item.get("starred")), bool(item.get("archived"))
+    )
+
+
+def build_item_actions_keyboard(
+    item_id: int, source: str | None = None, starred: bool = False, archived: bool = False
+) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton("✏️ Rename", callback_data=f"act:rename:{item_id}"),
@@ -67,6 +75,8 @@ def build_item_actions_keyboard(item_id: int, source: str | None = None, starred
     ]
     if source in TRANSCRIBED_SOURCES:
         rows.insert(0, [InlineKeyboardButton("🎙 Edit transcript", callback_data=f"act:transcript:{item_id}")])
+    if archived:
+        rows.insert(0, [InlineKeyboardButton("📤 Unarchive", callback_data=f"unarch:{item_id}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -160,7 +170,7 @@ async def handle_star_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await query.answer("⭐ Starred" if starred else "Removed from starred")
     item = await asyncio.to_thread(get_by_id, item_id, user_id)
-    await query.edit_message_reply_markup(reply_markup=build_item_actions_keyboard(item_id, item["source"], starred))
+    await query.edit_message_reply_markup(reply_markup=keyboard_for_item(item))
 
 
 async def handle_setcat_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -276,5 +286,5 @@ async def _apply_transcript_edit(message: Message, user_id: int, item_id: int) -
         "✅ Transcript updated and summary rewritten.\n\n"
         + format_saved_summary(item_id, title, item.get("category"), summary.text, new_text, summary.todos),
         parse_mode=ParseMode.HTML,
-        reply_markup=build_item_actions_keyboard(item_id, item["source"], bool(item.get("starred"))),
+        reply_markup=keyboard_for_item(item),
     )

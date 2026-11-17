@@ -17,6 +17,7 @@ ITEM = {
     "category": "Food & Drink",
     "user_note": "Try the iced latte.",
     "starred": 1,
+    "archived": 0,
 }
 
 

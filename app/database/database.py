@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS summaries (
     previous_summary TEXT,
     category TEXT,
     user_note TEXT,
-    starred INTEGER NOT NULL DEFAULT 0
+    starred INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
+    reviewed_at TEXT
 );
 """
 
@@ -133,11 +135,12 @@ def init_db() -> None:
             conn.executescript(_REMINDERS_MIGRATION)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
-        for column in ("previous_summary", "category", "user_note"):
+        for column in ("previous_summary", "category", "user_note", "reviewed_at"):
             if not _column_exists(conn, "summaries", column):
                 conn.execute(f"ALTER TABLE summaries ADD COLUMN {column} TEXT")
-        if not _column_exists(conn, "summaries", "starred"):
-            conn.execute("ALTER TABLE summaries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
+        for column in ("starred", "archived"):
+            if not _column_exists(conn, "summaries", column):
+                conn.execute(f"ALTER TABLE summaries ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "summaries", "user_id"):
             conn.execute("ALTER TABLE summaries ADD COLUMN user_id INTEGER")
             # Pre-existing rows predate multi-user support and belong to
@@ -174,20 +177,25 @@ def save_summary(content: dict, summary_text: str, user_id: int, category: str |
         return cursor.lastrowid
 
 
-def get_categories(user_id: int) -> list[tuple[str, int]]:
+def get_categories(user_id: int, include_archived: bool = True) -> list[tuple[str, int]]:
     """(category, item count), most-used first. Uncategorized items are excluded."""
+    archived = "" if include_archived else " AND archived = 0"
     with sqlite3.connect(config.db_path) as conn:
         return conn.execute(
-            "SELECT category, COUNT(*) FROM summaries WHERE user_id = ? AND category IS NOT NULL "
+            f"SELECT category, COUNT(*) FROM summaries WHERE user_id = ? AND category IS NOT NULL{archived} "
             "GROUP BY category ORDER BY COUNT(*) DESC, category",
             (user_id,),
         ).fetchall()
 
 
 def count_items(
-    user_id: int, category: str | None = None, uncategorized: bool = False, starred: bool = False
+    user_id: int,
+    category: str | None = None,
+    uncategorized: bool = False,
+    starred: bool = False,
+    archived: bool = False,
 ) -> int:
-    condition, params = _scope_filter(user_id, category, uncategorized, starred)
+    condition, params = _scope_filter(user_id, category, uncategorized, starred, archived)
     with sqlite3.connect(config.db_path) as conn:
         return conn.execute(f"SELECT COUNT(*) FROM summaries WHERE {condition}", params).fetchone()[0]
 
@@ -199,9 +207,10 @@ def list_page(
     category: str | None = None,
     uncategorized: bool = False,
     starred: bool = False,
+    archived: bool = False,
 ) -> list[dict]:
-    """Newest first. With no filter, lists everything."""
-    condition, params = _scope_filter(user_id, category, uncategorized, starred)
+    """Newest first. With no filter, lists everything not archived."""
+    condition, params = _scope_filter(user_id, category, uncategorized, starred, archived)
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -212,14 +221,50 @@ def list_page(
     return [dict(row) for row in rows]
 
 
-def _scope_filter(user_id: int, category: str | None, uncategorized: bool, starred: bool) -> tuple[str, tuple]:
+def _scope_filter(
+    user_id: int, category: str | None, uncategorized: bool, starred: bool, archived: bool = False
+) -> tuple[str, tuple]:
+    """Archived notes only show up in the archived scope."""
+    if archived:
+        return "user_id = ? AND archived = 1", (user_id,)
     if starred:
-        return "user_id = ? AND starred = 1", (user_id,)
+        return "user_id = ? AND archived = 0 AND starred = 1", (user_id,)
     if uncategorized:
-        return "user_id = ? AND category IS NULL", (user_id,)
+        return "user_id = ? AND archived = 0 AND category IS NULL", (user_id,)
     if category is not None:
-        return "user_id = ? AND category = ?", (user_id, category)
-    return "user_id = ?", (user_id,)
+        return "user_id = ? AND archived = 0 AND category = ?", (user_id, category)
+    return "user_id = ? AND archived = 0", (user_id,)
+
+
+def set_archived(row_id: int, user_id: int, archived: bool) -> bool:
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET archived = ? WHERE id = ? AND user_id = ?", (int(archived), row_id, user_id)
+        )
+        return cursor.rowcount > 0
+
+
+def mark_reviewed(row_id: int, user_id: int, when_iso: str) -> bool:
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE summaries SET reviewed_at = ? WHERE id = ? AND user_id = ?", (when_iso, row_id, user_id)
+        )
+        return cursor.rowcount > 0
+
+
+def get_review_candidate(
+    user_id: int, saved_before_iso: str, reviewed_before_iso: str, exclude_id: int | None = None
+) -> dict | None:
+    """A random note old enough to review and not kept recently; never-reviewed notes come first."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM summaries WHERE user_id = ? AND archived = 0 AND created_at < ? "
+            "AND (reviewed_at IS NULL OR reviewed_at < ?) AND id != ? "
+            "ORDER BY reviewed_at IS NOT NULL, RANDOM() LIMIT 1",
+            (user_id, saved_before_iso, reviewed_before_iso, exclude_id or 0),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def rename_category(user_id: int, old: str, new: str) -> int:
@@ -308,7 +353,7 @@ def get_random_item_before(user_id: int, before_iso: str) -> dict | None:
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT * FROM summaries WHERE user_id = ? AND created_at < ? ORDER BY RANDOM() LIMIT 1",
+            "SELECT * FROM summaries WHERE user_id = ? AND archived = 0 AND created_at < ? ORDER BY RANDOM() LIMIT 1",
             (user_id, before_iso),
         ).fetchone()
     return dict(row) if row else None

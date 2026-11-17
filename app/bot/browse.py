@@ -3,7 +3,7 @@
 
 Button data is stateless (memory.md #5): lm = back to the menu,
 lp:<page>:<scope> = a page, where scope is "a" (all), "s" (starred),
-"u" (uncategorized), or "c<category name>".
+"u" (uncategorized), "x" (archived), or "c<category name>".
 """
 import asyncio
 
@@ -13,7 +13,7 @@ from app.database.database import count_items, get_categories, list_page
 
 PAGE_SIZE = 10
 MENU_CALLBACK = "lm"
-ALL, STARRED, UNCATEGORIZED, CATEGORY = "a", "s", "u", "c"
+ALL, STARRED, UNCATEGORIZED, CATEGORY, ARCHIVED = "a", "s", "u", "c", "x"
 
 
 def encode_page(page: int, scope: str, category: str | None = None) -> str:
@@ -38,7 +38,7 @@ def format_item_line(item: dict) -> str:
     return f"{star}#{item['id']} — {display_title(item)} ({item['created_at'][:10]})"
 
 
-def build_menu(total: int, categories: list[tuple[str, int]], uncategorized: int, starred: int = 0):
+def build_menu(total: int, categories: list[tuple[str, int]], uncategorized: int, starred: int = 0, archived: int = 0):
     text = f"📚 Your saved notes ({total}). Pick a category:"
     buttons = [InlineKeyboardButton(f"🕒 All, newest first ({total})", callback_data=encode_page(0, ALL))]
     if starred:
@@ -52,6 +52,8 @@ def build_menu(total: int, categories: list[tuple[str, int]], uncategorized: int
             InlineKeyboardButton(f"❔ Uncategorized ({uncategorized})", callback_data=encode_page(0, UNCATEGORIZED))
         )
     rows = [buttons] + [category_buttons[i : i + 2] for i in range(0, len(category_buttons), 2)]
+    if archived:
+        rows.append([InlineKeyboardButton(f"📦 Archived ({archived})", callback_data=encode_page(0, ARCHIVED))])
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -62,6 +64,8 @@ def _scope_label(scope: str, category: str | None) -> str:
         return "❔ Uncategorized"
     if scope == STARRED:
         return "⭐ Starred"
+    if scope == ARCHIVED:
+        return "📦 Archived"
     return "🕒 All notes"
 
 
@@ -91,18 +95,19 @@ def build_page(items: list[dict], page: int, total: int, scope: str, category: s
 
 async def render_menu(user_id: int):
     total = await asyncio.to_thread(count_items, user_id)
-    if total == 0:
+    archived = await asyncio.to_thread(lambda: count_items(user_id, archived=True))
+    if total == 0 and archived == 0:
         return "You haven't saved anything yet.", None
-    categories = await asyncio.to_thread(get_categories, user_id)
+    categories = await asyncio.to_thread(lambda: get_categories(user_id, include_archived=False))
     uncategorized = await asyncio.to_thread(count_items, user_id, None, True)
     starred = await asyncio.to_thread(lambda: count_items(user_id, starred=True))
-    return build_menu(total, categories, uncategorized, starred)
+    return build_menu(total, categories, uncategorized, starred, archived)
 
 
 async def render_page(user_id: int, page: int, scope: str, category: str | None):
     filters = (
         {"category": category} if scope == CATEGORY
-        else {"uncategorized": scope == UNCATEGORIZED, "starred": scope == STARRED}
+        else {"uncategorized": scope == UNCATEGORIZED, "starred": scope == STARRED, "archived": scope == ARCHIVED}
     )
     total = await asyncio.to_thread(lambda: count_items(user_id, **filters))
     pages = max(1, -(-total // PAGE_SIZE))

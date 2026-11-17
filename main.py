@@ -19,8 +19,8 @@ from telegram.ext import (
 )
 
 from app.bot.actions import (
-    build_item_actions_keyboard,
     handle_action_callback,
+    keyboard_for_item,
     handle_setcat_callback,
     handle_star_callback,
 )
@@ -37,6 +37,7 @@ from app.bot.background import backfill_loop
 from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
 from app.bot.retry import retry_loop
+from app.bot.review import handle_review_callback, handle_unarchive_callback, review_command
 from app.bot.todos import handle_todo_callback, todo_command
 from app.config import config
 from app.bot.commands import (
@@ -96,6 +97,7 @@ _BOT_COMMANDS = [
     BotCommand("remind", "Set a reminder, e.g. tomorrow 7am dentist"),
     BotCommand("reminders", "See or cancel your reminders"),
     BotCommand("todo", "Your to-do list, or add one: /todo buy milk"),
+    BotCommand("review", "Revisit an older note: keep it or archive it"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -144,7 +146,7 @@ async def _post_init(app: Application) -> None:
 
 
 def _note_keyboard(item: dict):
-    return build_item_actions_keyboard(item["id"], item["source"], bool(item.get("starred")))
+    return keyboard_for_item(item)
 
 
 async def _post_stop(app: Application) -> None:
@@ -184,6 +186,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("remind", remind_command))
     app.add_handler(CommandHandler("todo", todo_command))
+    app.add_handler(CommandHandler("review", review_command))
     app.add_handler(CommandHandler("usage", usage_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -204,7 +207,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^delete:(yes|no):\d+$"))
     app.add_handler(CallbackQueryHandler(handle_delete_request_callback, pattern=r"^delconfirm:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:(list|help)$"))
-    app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[ausc].*)$"))
+    app.add_handler(CallbackQueryHandler(handle_list_callback, pattern=r"^(lm|lp:\d+:[auscx].*)$"))
     app.add_handler(CallbackQueryHandler(handle_star_callback, pattern=r"^star:\d+$"))
     app.add_handler(
         CallbackQueryHandler(handle_category_callback, pattern=r"^(catmenu|catpick:.+|catopt:(rename|merge|list)|catto:.+)$")
@@ -218,6 +221,8 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_cancel_callback, pattern=r"^remcancel:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
     app.add_handler(CallbackQueryHandler(handle_todo_callback, pattern=r"^todo:(done|undo):\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r"^rev:(show|skip|keep|arch|undo|next):\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_unarchive_callback, pattern=r"^unarch:\d+$"))
     app.add_error_handler(log_error)
 
     return app

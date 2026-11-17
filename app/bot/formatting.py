@@ -152,6 +152,8 @@ def format_full_item(item: dict) -> str:
         lines.append(f"📂 {escape(item['category'])}")
     if item.get("starred"):
         lines.append("⭐ Starred")
+    if item.get("archived"):
+        lines.append("📦 Archived (hidden from /list and /review)")
     if item.get("url"):
         lines.append(f"URL: {escape(item['url'])}")
     if item.get("merged_from"):
