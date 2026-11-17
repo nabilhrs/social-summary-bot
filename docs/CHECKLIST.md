@@ -480,3 +480,21 @@ onboarding, encrypting stored API keys) was deliberately skipped.
   complete JSON backup (not on manual `/digest`)
 - ✅ **Favourites**: ⭐ Star button (toggles in place), `/starred`, a
   Starred entry in the `/list` menu, ⭐ in list lines, starred in exports
+
+## Feature batch 2 (#5, #16)
+
+- ✅ `describe_many()` in `app/ai/gemini.py`: several items in one Gemini
+  request, in order. Small images go inline, everything else through the
+  Files API; uploads are always deleted
+- ✅ **#16 Full carousels**: `plan_post()` keeps every photo and video in
+  order (up to 10 items, videos until about 3 minutes total, first video
+  always kept). Verified live: Instagram's 3-video carousel now reads all
+  three videos; a single reel and a photo post still work
+- ✅ **#5 Albums**: messages sharing a `media_group_id` are collected until
+  1.5 s pass with no new item, then read together and saved as one note
+  (source `album`); unreadable or oversized files in the album are skipped
+  and mentioned. Gemini side verified live (two screenshots of one recipe
+  became one complete note)
+- ⚠️ The album buffer is in memory: if the bot restarts within those 1.5 s,
+  that album needs resending. Telegram-side behaviour not yet checked in the
+  real app

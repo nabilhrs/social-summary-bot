@@ -19,12 +19,12 @@ Open your bot in Telegram and tap **Start** (or send `/start`). That's it: there
 | **A Threads post link** | The post's own text is summarized. Replies in the thread aren't visible to the bot, so it reminds you to paste the rest if you want it included. |
 | **A YouTube link** (videos, Shorts, live replays) | Gemini watches the video straight from YouTube and you get a summary of what it covers, under the video's real title. Longer videos take longer. Private and age-restricted videos can't be watched. |
 | **A TikTok link** | The video is downloaded and watched: you get a summary of what's shown and said, plus the caption. Takes 30 seconds or more. |
-| **An Instagram reel or video post link** | Same as TikTok. For a post with several videos, the first one is used. |
-| **An Instagram photo post link** | The photos (up to 10 in a carousel) are read: any text in them is transcribed and the rest described, then summarized together with the caption. |
+| **An Instagram reel, photo post or carousel link** | Every photo and video in the post is read together, in order: text is transcribed, photos described, and videos watched (what's shown and said), then summarized with the caption. Up to 10 items and about 3 minutes of video per post. |
 | **A photo or screenshot** | Any text in it is transcribed, and the rest of the image is described. |
 | **A voice note or audio file** | Written down word for word, in the language you spoke, then summarized. |
 | **A video file** | Watched and described, then summarized. |
 | **A PDF or text file** | Its text is extracted, then summarized. |
+| **Several files at once** (an album) | Read together, in order, and saved as **one** note, so a recipe or thread split across 4 screenshots stays in one piece. The reply comes a couple of seconds later while the bot waits for the whole album. |
 
 Add a caption to a file ("recipe to try", "for the Friday meeting") and the bot keeps it as context. Files can be up to 20 MB, which is Telegram's limit for bots.
 
@@ -129,7 +129,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 | **File size** | 20 MB (Telegram's limit for bots) |
 | **Instagram** | Public posts only. Private accounts and stories need a login, and Instagram sometimes blocks the bot's server. |
 | **Threads** | Only the post you linked, not the replies under it |
-| **Photo albums** | Each photo in an album is summarized and saved separately |
+| **Albums and carousels** | Up to 10 items each; Instagram carousels also stop adding videos after about 3 minutes of video in total |
 
 ---
 

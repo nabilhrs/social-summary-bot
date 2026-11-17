@@ -1,12 +1,12 @@
 # Social Summary Bot
 
-A personal Telegram bot that turns whatever you send it into a short, saved summary: articles, Threads posts, TikTok videos, Instagram reels and photo posts, pasted text, screenshots, voice notes, audio, videos and PDFs. Every save gets a title and a category, related notes can be merged, and you can ask questions across everything you've saved.
+A personal Telegram bot that turns whatever you send it into a short, saved summary: articles, YouTube and TikTok videos, Threads posts, Instagram reels, photo posts and carousels, pasted text, screenshots, voice notes, audio, videos and PDFs. Every save gets a title and a category, related notes can be merged, and you can ask questions across everything you've saved.
 
 ## Features
 
 - **Send almost anything.** A link (web article, YouTube video, Threads post, TikTok video, Instagram reel or photo post), pasted text, or a file: photo or screenshot, voice note, audio, video, PDF or text file.
-- **Videos are actually watched.** Gemini watches YouTube videos straight from the link, and TikTok and Instagram videos are downloaded first; either way you get what's shown and said, not just the caption. Instagram photo posts (up to 10 photos) have their text transcribed and contents described, together with the caption.
-- **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said.
+- **Videos are actually watched.** Gemini watches YouTube videos straight from the link, and TikTok and Instagram videos are downloaded first; either way you get what's shown and said, not just the caption. Instagram carousels are read whole: every photo and video, in order (up to 10 items).
+- **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said. Several files sent together (an album) become one note.
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
 - **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star and 🗑 Delete buttons. `/starred` lists your favourites.
