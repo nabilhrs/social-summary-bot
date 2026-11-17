@@ -43,7 +43,7 @@ Every reply has:
   - **KEY POINTS:** 3 to 6 bullets
   - **TAKEAWAY:** one sentence
 - **Saved as #13**: the note's number, which commands like `/view 13` use.
-- Buttons: **✏️ Rename**, **📂 Category**, **📝 Note**, **⭐ Star**, **🗑 Delete** (plus **🎙 Edit transcript** for voice notes and audio).
+- Buttons: **✏️ Rename**, **📂 Category**, **📝 Note**, **⭐ Star**, **⏰ Remind me**, **🗑 Delete** (plus **🎙 Edit transcript** for voice notes and audio).
 
 ---
 
@@ -55,12 +55,18 @@ Use the buttons under the summary (or under `/view <id>`):
 - **📂 Category:** pick one of your categories, or tap **➕ New category** and reply with a name.
 - **📝 Note:** reply with your own thoughts ("tried this, works", "ask Sarah about it"). Notes add up, so you can add more later.
 - **⭐ Star:** marks the note as a favourite (tap again to unstar). See them all with `/starred`.
+- **⏰ Remind me:** pick **Tonight 8pm**, **Tomorrow 9am**, **Saturday 9am**, **Monday 9am** or **In a month**, and the bot sends the note back to you then, with its buttons. Handy for a recipe to try this weekend or a tip to use next week. `/reminders` lists what's coming up; tap one to cancel it.
 - **🗑 Delete:** asks you to confirm first. This can't be undone.
 - **🎙 Edit transcript** (voice notes and audio only): the bot sends what it heard as text you can tap to copy. Paste it into a reply, fix the misheard words, and send it. The bot saves the corrected transcript and rewrites the summary and title from it, keeping the same number and category. You can also check what it heard any time under **🎙 What I heard** in the summary (tap to expand).
 
 The same things work as commands: `/rename 13 Better title`, `/move 13 Travel`, `/note 13 your note` (`/note 13 clear` removes it), `/delete 13`.
 
 **About categories:** the bot picks one for every save and reuses your existing categories whenever they fit, so the list stays short. If it guessed wrong, move the note and future guesses take your categories into account.
+
+**Tidying categories:** `/categories` shows them all. Tap one to:
+- **✏️ Rename** it (reply with the new name). Renaming to a name you already have merges the two.
+- **🔀 Merge into…** another category, e.g. "Pets" into "Pets & Animals". Its notes all move over.
+- **📋 Show notes** in it.
 
 ---
 
@@ -145,11 +151,13 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 | `/view <id>` | Show one note in full, with its buttons |
 | `/rename <id> <title>` | Change a title |
 | `/move <id> <category>` | Change a category (new names create a new one) |
+| `/categories` | Rename or merge categories |
 | `/note <id> <text>` · `/note <id> clear` | Add your own note, or remove it |
 | `/merge <keep_id> <absorb_id>` | Merge two notes into the first |
 | `/undo <id>` | Undo the last merge into a note |
 | `/delete <id>` | Delete a note (asks first) |
 | `/digest` | Show the weekly digest now |
+| `/reminders` | See or cancel upcoming reminders |
 | `/export` | Download all your notes |
 | `/setkey <key>` | Use a different Gemini API key |
 | `/help` | Short version of this guide |

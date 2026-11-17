@@ -516,3 +516,18 @@ onboarding, encrypting stored API keys) was deliberately skipped.
 - ⚠️ `/ask`, merges and transcript edits still just report the error
 - ⚠️ Background retries covered by unit and end-to-end tests with a fake
   Telegram bot; not yet seen live
+
+## Feature batch 3 (#3, #4)
+
+- ✅ **#4 Manage categories** (`app/bot/categories.py`): `/categories` →
+  tap one → ✏️ Rename (ForceReply; renaming to an existing name merges),
+  🔀 Merge into… (picker of the other categories), 📋 Show notes. Button
+  data carries one name and the other is read from the message text, since
+  two 40-byte names don't fit in 64 bytes
+- ✅ **#3 Remind me** (`app/bot/reminders.py`): ⏰ button under every
+  summary → Tonight 8pm / Tomorrow 9am / Saturday 9am / Monday 9am / In a
+  month, in `TIMEZONE`. Stored in a `reminders` table; a loop checks every
+  minute and sends the note back with its buttons; `/reminders` lists and
+  cancels. Reminders for deleted notes are dropped
+- ⚠️ No custom date/time yet (buttons only, by design for now)
+- ⚠️ Not yet checked in the real Telegram app

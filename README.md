@@ -9,11 +9,12 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 - **Files are read first.** Screenshots have their text transcribed, voice notes and audio are written down word for word, and PDFs have their text extracted. The transcript is what gets saved, so you can find a voice note later by what was said. Several files sent together (an album) become one note.
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
-- **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star and 🗑 Delete buttons. `/starred` lists your favourites.
+- **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star, ⏰ Remind me and 🗑 Delete buttons. `/starred` lists your favourites.
+- **Reminders.** ⏰ Remind me brings a note back tonight, tomorrow, on Saturday, on Monday or in a month. `/reminders` lists and cancels them.
 - **Never summarizes the same link twice.** A link you've already saved (even with a different share suffix) gets "Already saved as #41" instead of spending Gemini quota, with buttons to view it or save it again.
 - **Correct what it heard.** Voice note and audio summaries show the transcript (tap to expand) and a 🎙 Edit transcript button: send back the corrected text and the summary and title are rewritten from it.
 - **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
-- **Browse by category.** `/list` shows your categories with counts, and each one pages through 10 notes at a time.
+- **Browse by category.** `/list` shows your categories with counts, and each one pages through 10 notes at a time. `/categories` renames categories or merges one into another.
 - **Ask your notes.** `/ask` answers a question using only what you've saved, and cites the notes it used, e.g. `(#12)`. It answers in the language you ask in.
 - **Weekly digest.** Every Sunday at 9am, the week's saves grouped by category plus one older note to revisit.
 - **Your data, backed up.** The Sunday digest comes with a complete JSON backup, and `/export` sends a readable Markdown file plus the backup any time.
@@ -219,8 +220,11 @@ Code layout:
 | `app/bot/commands.py` | Slash commands |
 | `app/bot/actions.py` | Buttons under summaries (rename, category, note, delete) and reply prompts |
 | `app/bot/browse.py` | `/list` category menu and pages |
-| `app/bot/digest.py` | Weekly digest |
+| `app/bot/digest.py` | Weekly digest and backup |
 | `app/bot/background.py` | Fills in titles and categories for older notes |
+| `app/bot/retry.py` | Keeps saves that hit a busy Gemini and retries them later |
+| `app/bot/reminders.py` | ⏰ Remind me and `/reminders` |
+| `app/bot/categories.py` | `/categories`: rename and merge categories |
 | `app/bot/export.py` | `/export` files |
 | `app/bot/formatting.py` | Telegram HTML rendering, error messages, keyboards |
 | `app/ai/gemini.py` | Every Gemini call: retries, model fallback, file uploads |
