@@ -75,10 +75,54 @@ def test_retries_transient_error_on_same_model(fake_client):
     assert client.calls == [PRIMARY, PRIMARY]
 
 
-def test_retries_network_timeout(fake_client):
-    client = fake_client({PRIMARY: [httpx.ReadTimeout("slow"), "ok"]})
+def test_timeout_moves_straight_to_next_model(fake_client):
+    client = fake_client({PRIMARY: [httpx.ReadTimeout("slow")], FALLBACK_1: ["ok"]})
+    assert generate_text("key", "prompt") == "ok"
+    assert client.calls == [PRIMARY, FALLBACK_1]
+
+
+def test_slow_504_moves_straight_to_next_model(fake_client):
+    client = fake_client({PRIMARY: [_api_error(504, "deadline exceeded")], FALLBACK_1: ["ok"]})
+    assert generate_text("key", "prompt") == "ok"
+    assert client.calls == [PRIMARY, FALLBACK_1]
+
+
+def test_quick_network_error_is_retried_on_same_model(fake_client):
+    client = fake_client({PRIMARY: [httpx.ConnectError("blip"), "ok"]})
     assert generate_text("key", "prompt") == "ok"
     assert client.calls == [PRIMARY, PRIMARY]
+
+
+def test_second_round_after_every_model_was_busy(fake_client):
+    client = fake_client(
+        {
+            PRIMARY: [OVERLOADED_503, OVERLOADED_503, "second round"],
+            FALLBACK_1: [OVERLOADED_503, OVERLOADED_503],
+            FALLBACK_2: [OVERLOADED_503, OVERLOADED_503],
+        }
+    )
+    assert generate_text("key", "prompt") == "second round"
+    assert client.calls == [PRIMARY, PRIMARY, FALLBACK_1, FALLBACK_1, FALLBACK_2, FALLBACK_2, PRIMARY]
+
+
+def test_second_round_skips_models_out_of_quota(fake_client):
+    client = fake_client(
+        {
+            PRIMARY: [DAILY_429],
+            FALLBACK_1: [OVERLOADED_503, OVERLOADED_503, "ok"],
+            FALLBACK_2: [_api_error(504, "slow")],
+        }
+    )
+    assert generate_text("key", "prompt") == "ok"
+    assert client.calls == [PRIMARY, FALLBACK_1, FALLBACK_1, FALLBACK_2, FALLBACK_1]
+
+
+def test_no_second_round_when_the_deadline_is_too_short(fake_client):
+    client = fake_client({model: [OVERLOADED_503, OVERLOADED_503] for model in MODELS})
+    with pytest.raises(GeminiError) as exc_info:
+        generate_text("key", "prompt", deadline_seconds=10)
+    assert exc_info.value.kind == UNAVAILABLE
+    assert len(client.calls) == 6
 
 
 def test_falls_back_after_persistent_overload(fake_client):
@@ -117,8 +161,8 @@ def test_mixed_quota_and_overload_reports_unavailable(fake_client):
     fake_client(
         {
             PRIMARY: [DAILY_429],
-            FALLBACK_1: [OVERLOADED_503, OVERLOADED_503],
-            FALLBACK_2: [OVERLOADED_503, OVERLOADED_503],
+            FALLBACK_1: [OVERLOADED_503, OVERLOADED_503, OVERLOADED_503],
+            FALLBACK_2: [OVERLOADED_503, OVERLOADED_503, OVERLOADED_503],
         }
     )
     with pytest.raises(GeminiError) as exc_info:

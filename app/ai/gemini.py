@@ -22,7 +22,15 @@ MODELS = ("gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 _MAX_UPLOAD_POLL_SECONDS = 120
 _ATTEMPTS_PER_MODEL = 2
 _RETRY_DELAY_SECONDS = 2
-_TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
+# Fast "busy" answers are worth one retry on the same model. A 504 or a
+# timeout only arrives after the full wait (often ~90 s, seen live), so
+# retrying that model would use up the deadline before any fallback runs.
+_FAST_BUSY_CODES = {500, 502, 503}
+_SLOW_BUSY_CODES = {504}
+# If every model was busy, pause and go round once more while time remains.
+_ROUNDS = 2
+_ROUND_PAUSE_SECONDS = 20
+_MIN_ATTEMPT_SECONDS = 15
 
 QUOTA_DAILY = "quota_daily"
 QUOTA_RATE = "quota_rate"
@@ -41,8 +49,8 @@ def _is_invalid_key(exc: errors.APIError) -> bool:
     return exc.code in (401, 403) or (exc.code == 400 and "API key not valid" in str(exc))
 
 
-def _pause_before_retry(attempt: int) -> None:
-    if attempt + 1 < _ATTEMPTS_PER_MODEL:
+def _pause_before_retry(attempt: int, attempts: int) -> None:
+    if attempt + 1 < attempts:
         time.sleep(_RETRY_DELAY_SECONDS)
 
 
@@ -58,7 +66,7 @@ def generate_text(
     api_key: str,
     contents,
     timeout_seconds: float = 30,
-    deadline_seconds: float = 90,
+    deadline_seconds: float = 120,
     config: types.GenerateContentConfig | None = None,
 ) -> str:
     """Blocking — call via asyncio.to_thread. Returns the response text, or
@@ -68,48 +76,71 @@ def generate_text(
     )
     started = time.monotonic()
     failures: list[str] = []
+    # Out of quota, retired or empty: not worth another round.
+    done_with: set[str] = set()
 
-    for model in MODELS:
-        for attempt in range(_ATTEMPTS_PER_MODEL):
-            if time.monotonic() - started > deadline_seconds:
-                logger.error("Gemini deadline of %ss exceeded", deadline_seconds)
-                raise GeminiError(_final_kind(failures + [UNAVAILABLE]))
-            try:
-                response = client.models.generate_content(model=model, contents=contents, config=config)
-            except errors.APIError as exc:
-                if _is_invalid_key(exc):
-                    logger.error("Gemini rejected the API key: %s", exc)
-                    raise GeminiError(INVALID_KEY) from exc
-                if exc.code == 429:
-                    kind = QUOTA_DAILY if "PerDay" in str(exc) else QUOTA_RATE
-                    logger.warning("%s quota exhausted (%s), trying next model", model, kind)
-                    failures.append(kind)
-                    break
-                if exc.code == 404:
-                    logger.error("%s not found (retired?), trying next model", model)
-                    failures.append(FAILED)
-                    break
-                if exc.code in _TRANSIENT_STATUS_CODES:
-                    logger.warning("%s returned %s (attempt %d)", model, exc.code, attempt + 1)
-                    failures.append(UNAVAILABLE)
-                    _pause_before_retry(attempt)
-                    continue
-                logger.exception("%s failed with a non-retryable error", model)
-                raise GeminiError(FAILED) from exc
-            except httpx.TransportError as exc:
-                logger.warning("%s network error/timeout (attempt %d): %s", model, attempt + 1, exc)
-                failures.append(UNAVAILABLE)
-                _pause_before_retry(attempt)
+    for round_index in range(_ROUNDS):
+        if round_index:
+            elapsed = time.monotonic() - started
+            if UNAVAILABLE not in failures or elapsed + _ROUND_PAUSE_SECONDS + _MIN_ATTEMPT_SECONDS > deadline_seconds:
+                break
+            logger.warning("Every Gemini model was busy; trying again in %ss", _ROUND_PAUSE_SECONDS)
+            time.sleep(_ROUND_PAUSE_SECONDS)
+        attempts = _ATTEMPTS_PER_MODEL if round_index == 0 else 1
+        for model in MODELS:
+            if model in done_with:
                 continue
+            for attempt in range(attempts):
+                if time.monotonic() - started > deadline_seconds:
+                    logger.error("Gemini deadline of %ss exceeded", deadline_seconds)
+                    raise GeminiError(_final_kind(failures + [UNAVAILABLE]))
+                try:
+                    response = client.models.generate_content(model=model, contents=contents, config=config)
+                except errors.APIError as exc:
+                    if _is_invalid_key(exc):
+                        logger.error("Gemini rejected the API key: %s", exc)
+                        raise GeminiError(INVALID_KEY) from exc
+                    if exc.code == 429:
+                        kind = QUOTA_DAILY if "PerDay" in str(exc) else QUOTA_RATE
+                        logger.warning("%s quota exhausted (%s), trying next model", model, kind)
+                        failures.append(kind)
+                        done_with.add(model)
+                        break
+                    if exc.code == 404:
+                        logger.error("%s not found (retired?), trying next model", model)
+                        failures.append(FAILED)
+                        done_with.add(model)
+                        break
+                    if exc.code in _FAST_BUSY_CODES:
+                        logger.warning("%s returned %s (attempt %d)", model, exc.code, attempt + 1)
+                        failures.append(UNAVAILABLE)
+                        _pause_before_retry(attempt, attempts)
+                        continue
+                    if exc.code in _SLOW_BUSY_CODES:
+                        logger.warning("%s returned %s; moving to the next model", model, exc.code)
+                        failures.append(UNAVAILABLE)
+                        break
+                    logger.exception("%s failed with a non-retryable error", model)
+                    raise GeminiError(FAILED) from exc
+                except httpx.TimeoutException as exc:
+                    logger.warning("%s timed out; moving to the next model: %s", model, exc)
+                    failures.append(UNAVAILABLE)
+                    break
+                except httpx.TransportError as exc:
+                    logger.warning("%s network error (attempt %d): %s", model, attempt + 1, exc)
+                    failures.append(UNAVAILABLE)
+                    _pause_before_retry(attempt, attempts)
+                    continue
 
-            text = (response.text or "").strip()
-            if text:
-                if model != MODELS[0]:
-                    logger.info("Served by fallback model %s", model)
-                return text
-            logger.warning("%s returned an empty response, trying next model", model)
-            failures.append(FAILED)
-            break
+                text = (response.text or "").strip()
+                if text:
+                    if model != MODELS[0]:
+                        logger.info("Served by fallback model %s", model)
+                    return text
+                logger.warning("%s returned an empty response, trying next model", model)
+                failures.append(FAILED)
+                done_with.add(model)
+                break
 
     raise GeminiError(_final_kind(failures))
 
