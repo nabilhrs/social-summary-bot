@@ -21,6 +21,17 @@ _TITLE_INSTRUCTION = (
     "same language as the content, no quotes>"
 )
 
+# Asked for in the same request as the summary, so to-dos cost no extra quota.
+_TODO_INSTRUCTION = (
+    "TODO: <specific things this content suggests the user go and do — e.g. "
+    "try a particular place or recipe, buy or check out a named product, "
+    "read or watch a named thing, sign up or apply for something, or tasks "
+    "the user wrote down for themselves. Up to 3, each a short action phrase "
+    "under 12 words starting with a verb, in the same language as the "
+    "content, separated by \" | \". General advice, facts and opinions are "
+    "not to-dos: write NONE if there is nothing this specific to do>"
+)
+
 _CATEGORY_RULES = (
     "Reuse one of the existing categories whenever it reasonably fits — only "
     "create a new one if none do. A new category must be a broad, reusable "
@@ -94,7 +105,8 @@ def build_summary_prompt(
         f"{structure}\n"
         f"{_RELATED_ID_INSTRUCTION}\n"
         f"{_TITLE_INSTRUCTION}\n"
-        f"{_category_instruction(existing_categories or [])}\n\n"
+        f"{_category_instruction(existing_categories or [])}\n"
+        f"{_TODO_INSTRUCTION}\n\n"
         f"{chr(10).join(header_lines)}\n\n"
         "New content:\n"
         f"{content['text']}\n\n"

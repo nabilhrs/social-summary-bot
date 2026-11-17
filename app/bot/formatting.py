@@ -118,7 +118,12 @@ def transcript_block(text: str) -> str:
 
 
 def format_saved_summary(
-    item_id: int | None, title: str | None, category: str | None, summary: str, transcript: str | None = None
+    item_id: int | None,
+    title: str | None,
+    category: str | None,
+    summary: str,
+    transcript: str | None = None,
+    todos: list[str] | None = None,
 ) -> str:
     """Telegram HTML for the reply right after something is saved."""
     lines = []
@@ -131,6 +136,8 @@ def format_saved_summary(
     lines.append(render_summary_html(summary))
     if transcript:
         lines += ["", transcript_block(transcript)]
+    if todos and item_id:
+        lines += ["", "<b>☑️ Added to /todo:</b>"] + [f"• {_escape(todo)}" for todo in todos]
     lines.append("")
     lines.append(f"<i>Saved as #{item_id}</i>" if item_id else "<i>⚠️ Couldn't save this one.</i>")
     return "\n".join(lines)

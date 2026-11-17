@@ -63,6 +63,7 @@ from app.bot.retry import (
 )
 from app.database.database import (
     add_pending_job,
+    add_todos,
     delete_job,
     reschedule_job,
     save_summary,
@@ -367,9 +368,17 @@ async def _summarize_and_save(message, user_id: int, api_key: str, content: dict
         logger.exception("Failed to save summary to database")
         new_id = None
 
+    todos = summary.todos
+    if new_id and todos:
+        try:
+            await asyncio.to_thread(add_todos, user_id, new_id, todos)
+        except Exception:
+            logger.exception("Failed to save to-dos for #%s", new_id)
+            todos = []
+
     transcript = content["text"] if content["source"] in TRANSCRIBED_SOURCES else None
     await message.reply_text(
-        format_saved_summary(new_id, content.get("title"), summary.category, summary.text, transcript),
+        format_saved_summary(new_id, content.get("title"), summary.category, summary.text, transcript, todos),
         parse_mode=ParseMode.HTML,
         reply_markup=build_item_actions_keyboard(new_id, content["source"]) if new_id else None,
     )

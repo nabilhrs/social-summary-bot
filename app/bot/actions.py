@@ -30,6 +30,7 @@ from app.database.database import (
     append_note,
     get_by_id,
     get_categories,
+    replace_open_todos,
     replace_text,
     resolve_gemini_api_key,
     toggle_star,
@@ -270,9 +271,10 @@ async def _apply_transcript_edit(message: Message, user_id: int, item_id: int) -
 
     title = summary.title or item.get("title")
     await asyncio.to_thread(replace_text, item_id, user_id, new_text, summary.text, title)
+    await asyncio.to_thread(replace_open_todos, user_id, item_id, summary.todos)
     await message.reply_text(
         "✅ Transcript updated and summary rewritten.\n\n"
-        + format_saved_summary(item_id, title, item.get("category"), summary.text, new_text),
+        + format_saved_summary(item_id, title, item.get("category"), summary.text, new_text, summary.todos),
         parse_mode=ParseMode.HTML,
         reply_markup=build_item_actions_keyboard(item_id, item["source"], bool(item.get("starred"))),
     )

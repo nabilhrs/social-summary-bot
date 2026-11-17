@@ -89,6 +89,7 @@ HELP_TEXT = (
     "`/digest` — show the weekly digest now\n"
     "`/remind <when> <what>` — a reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` or `/remind esok pukul 3 petang mesyuarat`\n"
     "`/reminders` — see or cancel reminders (or tap Remind me under any summary)\n"
+    "`/todo` — things to do that I spotted in your notes; tap one to tick it off. `/todo <text>` adds your own\n"
     "`/export` — download all your notes (readable Markdown + full JSON backup)\n"
     "`/usage` — today's Gemini requests per model, and saves waiting to retry\n"
     "`/setkey <api_key>` — set your own Gemini API key (required unless you're the bot's owner)\n"

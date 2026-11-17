@@ -86,6 +86,19 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at TEXT NOT NULL
 );
 """
+# Things to do: pulled from a note by the summarizer (item_id set), or added
+# with /todo (item_id NULL). done_at is set when ticked off.
+_TODOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS todos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    item_id INTEGER,
+    text TEXT NOT NULL,
+    done_at TEXT,
+    created_at TEXT NOT NULL
+);
+"""
+
 # The first version required item_id; SQLite can't relax NOT NULL in place.
 _REMINDERS_MIGRATION = """
 ALTER TABLE reminders RENAME TO reminders_old;
@@ -115,6 +128,7 @@ def init_db() -> None:
         conn.execute(_PENDING_JOBS_SCHEMA)
         conn.execute(_REMINDERS_SCHEMA)
         conn.execute(_GEMINI_USAGE_SCHEMA)
+        conn.execute(_TODOS_SCHEMA)
         if not _column_exists(conn, "reminders", "text"):
             conn.executescript(_REMINDERS_MIGRATION)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
@@ -393,11 +407,15 @@ def update_merged_summary(existing_id: int, summary_text: str, merged_id: int, u
 
 
 def delete_item(row_id: int, user_id: int) -> bool:
+    """Deletes the note and the to-dos that came from it."""
     with sqlite3.connect(config.db_path) as conn:
         cursor = conn.execute(
             "DELETE FROM summaries WHERE id = ? AND user_id = ?", (row_id, user_id)
         )
-        return cursor.rowcount > 0
+        if cursor.rowcount == 0:
+            return False
+        conn.execute("DELETE FROM todos WHERE item_id = ? AND user_id = ?", (row_id, user_id))
+        return True
 
 
 def undo_merge(row_id: int, previous_summary: str, user_id: int) -> None:
@@ -484,6 +502,56 @@ def delete_reminder(reminder_id: int, user_id: int | None = None) -> bool:
             cursor = conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
         else:
             cursor = conn.execute("DELETE FROM reminders WHERE id = ? AND user_id = ?", (reminder_id, user_id))
+        return cursor.rowcount > 0
+
+
+def add_todos(user_id: int, item_id: int | None, texts: list[str]) -> list[int]:
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(config.db_path) as conn:
+        return [
+            conn.execute(
+                "INSERT INTO todos (user_id, item_id, text, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, item_id, text, now),
+            ).lastrowid
+            for text in texts
+        ]
+
+
+def replace_open_todos(user_id: int, item_id: int, texts: list[str]) -> None:
+    """After a note is re-summarized: its unticked to-dos are swapped for the new ones."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "DELETE FROM todos WHERE user_id = ? AND item_id = ? AND done_at IS NULL", (user_id, item_id)
+        )
+    add_todos(user_id, item_id, texts)
+
+
+def list_open_todos(user_id: int) -> list[dict]:
+    """Unticked to-dos, oldest first, with the title of the note each came from."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT t.id, t.item_id, t.text, t.created_at, s.title AS item_title FROM todos t "
+            "LEFT JOIN summaries s ON s.id = t.item_id AND s.user_id = t.user_id "
+            "WHERE t.user_id = ? AND t.done_at IS NULL ORDER BY t.id",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_todo(todo_id: int, user_id: int) -> dict | None:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM todos WHERE id = ? AND user_id = ?", (todo_id, user_id)).fetchone()
+    return dict(row) if row else None
+
+
+def set_todo_done(todo_id: int, user_id: int, done: bool) -> bool:
+    done_at = datetime.now(timezone.utc).isoformat() if done else None
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE todos SET done_at = ? WHERE id = ? AND user_id = ?", (done_at, todo_id, user_id)
+        )
         return cursor.rowcount > 0
 
 

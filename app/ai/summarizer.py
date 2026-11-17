@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.ai.gemini import FAILED, GeminiError, generate_text
 from app.ai.prompts import build_ask_prompt, build_merge_prompt, build_organize_prompt, build_summary_prompt
@@ -23,10 +23,13 @@ _ASK_SUMMARY_CHAR_BUDGET = 200_000
 _ASK_TIMEOUT_SECONDS = 60
 
 _TAG_LINE_RE = re.compile(
-    r"^[\s*_#>-]*(RELATED_ID|TITLE|CATEGORY)[\s*_]*:[\s*_]*(.*?)[\s*_]*$", re.IGNORECASE
+    r"^[\s*_#>-]*(RELATED_ID|TITLE|CATEGORY|TODO)[\s*_]*:[\s*_]*(.*?)[\s*_]*$", re.IGNORECASE
 )
 _RELATED_ID_VALUE_RE = re.compile(r"#?\s*(\d+)")
 _MAX_TITLE_CHARS = 80
+_MAX_TODOS = 3
+_MAX_TODO_CHARS = 120
+_NO_TODO_VALUES = {"none", "n/a", "na", "nil", "tiada", "-"}
 _MAX_CATEGORY_CHARS = 30
 _MAX_CATEGORY_BYTES = 40
 _ORGANIZE_BATCH_SIZE = 40
@@ -38,6 +41,20 @@ class Summary:
     related_id: int | None = None
     title: str | None = None
     category: str | None = None
+    todos: list[str] = field(default_factory=list)
+
+
+def parse_todos(value: str | None) -> list[str]:
+    """The TODO tag's " | "-separated items, cleaned; [] for NONE."""
+    todos: list[str] = []
+    for part in (value or "").split("|"):
+        text = " ".join(part.split()).strip("\"'“”‘’<>[]•-*. ")
+        if not text or text.casefold() in _NO_TODO_VALUES:
+            continue
+        text = text[:_MAX_TODO_CHARS].strip()
+        if text.casefold() not in {existing.casefold() for existing in todos}:
+            todos.append(text[0].upper() + text[1:])
+    return todos[:_MAX_TODOS]
 
 
 def _extract_tags(text: str) -> tuple[str, dict[str, str]]:
@@ -107,6 +124,7 @@ async def summarize(
         related_id=_parse_related_id(tags.get("RELATED_ID")),
         title=clean_title(tags.get("TITLE")),
         category=clean_category(tags.get("CATEGORY"), existing_categories),
+        todos=parse_todos(tags.get("TODO")),
     )
 
 

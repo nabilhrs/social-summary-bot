@@ -37,6 +37,7 @@ from app.bot.background import backfill_loop
 from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
 from app.bot.retry import retry_loop
+from app.bot.todos import handle_todo_callback, todo_command
 from app.config import config
 from app.bot.commands import (
     start,
@@ -94,6 +95,7 @@ _BOT_COMMANDS = [
     BotCommand("digest", "Show your weekly digest now"),
     BotCommand("remind", "Set a reminder, e.g. tomorrow 7am dentist"),
     BotCommand("reminders", "See or cancel your reminders"),
+    BotCommand("todo", "Your to-do list, or add one: /todo buy milk"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
 
@@ -181,6 +183,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("remind", remind_command))
+    app.add_handler(CommandHandler("todo", todo_command))
     app.add_handler(CommandHandler("usage", usage_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -214,6 +217,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(handle_remind_callback, pattern=r"^remind:\d+:(tn|tm|wk|nw|mo)$"))
     app.add_handler(CallbackQueryHandler(handle_cancel_callback, pattern=r"^remcancel:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
+    app.add_handler(CallbackQueryHandler(handle_todo_callback, pattern=r"^todo:(done|undo):\d+$"))
     app.add_error_handler(log_error)
 
     return app
