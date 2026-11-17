@@ -531,3 +531,18 @@ onboarding, encrypting stored API keys) was deliberately skipped.
   cancels. Reminders for deleted notes are dropped
 - ⚠️ No custom date/time yet (buttons only, by design for now)
 - ⚠️ Not yet checked in the real Telegram app
+
+### Plain reminders (`/remind`), English and Malay
+- ✅ `app/bot/timeparse.py`: rule-based (no Gemini): today/tomorrow/lusa/
+  esok/besok, weekdays (English + Malay, "isnin depan"), "next week" /
+  "minggu depan", "in 2 hours" / "dalam 30 minit" / "2 jam lagi" /
+  "sejam lagi" / "setengah jam lagi", clock times (7am, 7:30pm, 19:00,
+  "pukul 3 petang"), parts of day (pagi, tengah hari, petang, malam,
+  tonight), dates day-first (25/11, 25 nov, 25 disember). Time words can be
+  at the start or the end. 53 example phrases covered by tests
+- ✅ `/remind <when> <what>`, or a message starting "remind me" /
+  "ingatkan saya" / "ingatkan aku"; confirmation shows the exact date with
+  ❌ Cancel; past times and missing text are explained
+- ✅ Note reminders gain "🕐 Other time…" (typed time, same parser)
+- ✅ `reminders` table migrated so `item_id` can be empty (plain reminders
+  store `text`); existing reminders are copied over

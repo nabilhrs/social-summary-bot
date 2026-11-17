@@ -55,7 +55,7 @@ Use the buttons under the summary (or under `/view <id>`):
 - **📂 Category:** pick one of your categories, or tap **➕ New category** and reply with a name.
 - **📝 Note:** reply with your own thoughts ("tried this, works", "ask Sarah about it"). Notes add up, so you can add more later.
 - **⭐ Star:** marks the note as a favourite (tap again to unstar). See them all with `/starred`.
-- **⏰ Remind me:** pick **Tonight 8pm**, **Tomorrow 9am**, **Saturday 9am**, **Monday 9am** or **In a month**, and the bot sends the note back to you then, with its buttons. Handy for a recipe to try this weekend or a tip to use next week. `/reminders` lists what's coming up; tap one to cancel it.
+- **⏰ Remind me:** pick **Tonight 8pm**, **Tomorrow 9am**, **Saturday 9am**, **Monday 9am** or **In a month**, or **🕐 Other time…** and reply with any time in words ("fri 3pm", "esok pukul 8 pagi"). The bot sends the note back to you then, with its buttons. Handy for a recipe to try this weekend or a tip to use next week. `/reminders` lists what's coming up; tap one to cancel it.
 - **🗑 Delete:** asks you to confirm first. This can't be undone.
 - **🎙 Edit transcript** (voice notes and audio only): the bot sends what it heard as text you can tap to copy. Paste it into a reply, fix the misheard words, and send it. The bot saves the corrected transcript and rewrites the summary and title from it, keeping the same number and category. You can also check what it heard any time under **🎙 What I heard** in the summary (tap to expand).
 
@@ -104,9 +104,26 @@ Ask in English or Malay and it answers in the same language. If your notes don't
 
 ---
 
-## 7. Weekly digest
+## 7. Reminders and the weekly digest
 
-Every Sunday at 9am the bot sends a digest:
+**Any reminder, not just notes:** `/remind <when> <what>` sets a plain reminder, in English or Malay. You can also just send a message starting with "remind me" or "ingatkan saya".
+
+| You send | You're reminded |
+|---|---|
+| `/remind tomorrow 7am dentist appointment` | tomorrow at 7:00am |
+| `/remind in 2 hours call mum` | in 2 hours |
+| `/remind fri 3pm submit the report` | this Friday at 3:00pm |
+| `/remind 25/11 9:30am renew road tax` | 25 November at 9:30am (dates are day/month) |
+| `/remind tonight take out the trash` | tonight at 8:00pm |
+| `remind me next week book the car service` | in a week, at 9:00am |
+| `/remind esok pukul 8 pagi temujanji doktor` | tomorrow at 8:00am |
+| `/remind 2 jam lagi angkat kain` | in 2 hours |
+| `/remind jumaat 2 petang hantar laporan` | Friday at 2:00pm |
+| `ingatkan saya malam ini telefon mak` | tonight at 8:00pm |
+
+The time can go at the start or the end ("dentist appointment tomorrow 7am" works too). With a day but no time, it's 9am; "pagi"/"morning" means 9am, "petang"/"afternoon" 4pm/3pm, "malam"/"night" 8pm. The bot always replies with the exact date and time it understood, plus a **❌ Cancel** button, so check it at a glance. Times are read without the AI, so this works instantly, uses no quota, and still works when Gemini is busy.
+
+**Weekly digest:** every Sunday at 9am the bot sends a digest:
 
 - what you saved that week, grouped by category
 - one older note from your archive, to remind you it's there
@@ -157,6 +174,7 @@ If you saved nothing and there's nothing older to show, it doesn't send anything
 | `/undo <id>` | Undo the last merge into a note |
 | `/delete <id>` | Delete a note (asks first) |
 | `/digest` | Show the weekly digest now |
+| `/remind <when> <what>` | A reminder in English or Malay, e.g. `/remind tomorrow 7am dentist` |
 | `/reminders` | See or cancel upcoming reminders |
 | `/export` | Download all your notes |
 | `/setkey <key>` | Use a different Gemini API key |

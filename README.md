@@ -10,7 +10,7 @@ A personal Telegram bot that turns whatever you send it into a short, saved summ
 - **Summaries that fit.** Short notes get one or two sentences. Longer content gets **TL;DR**, **KEY POINTS** and **TAKEAWAY**, in bold with bullets.
 - **Titles and categories done for you.** Each save gets a short title and a category. Gemini reuses your existing categories and only makes a new one when nothing fits.
 - **Fix with a tap.** Every summary has ✏️ Rename, 📂 Category, 📝 Note, ⭐ Star, ⏰ Remind me and 🗑 Delete buttons. `/starred` lists your favourites.
-- **Reminders.** ⏰ Remind me brings a note back tonight, tomorrow, on Saturday, on Monday or in a month. `/reminders` lists and cancels them.
+- **Reminders.** ⏰ Remind me brings a note back at a preset or typed time, and `/remind <when> <what>` sets any reminder, no note needed, in English or Malay ("tomorrow 7am dentist", "esok pukul 8 pagi temujanji doktor", "2 jam lagi angkat kain"). Times are read by a rule-based parser, so they work instantly and without Gemini. `/reminders` lists and cancels them.
 - **Never summarizes the same link twice.** A link you've already saved (even with a different share suffix) gets "Already saved as #41" instead of spending Gemini quota, with buttons to view it or save it again.
 - **Correct what it heard.** Voice note and audio summaries show the transcript (tap to expand) and a 🎙 Edit transcript button: send back the corrected text and the summary and title are rewritten from it.
 - **No duplicates.** When something new looks related to an older save, the bot offers to merge them, with a button to view the older one first. `/undo` reverts a merge.
@@ -223,7 +223,8 @@ Code layout:
 | `app/bot/digest.py` | Weekly digest and backup |
 | `app/bot/background.py` | Fills in titles and categories for older notes |
 | `app/bot/retry.py` | Keeps saves that hit a busy Gemini and retries them later |
-| `app/bot/reminders.py` | ⏰ Remind me and `/reminders` |
+| `app/bot/reminders.py` | ⏰ Remind me, `/remind` and `/reminders` |
+| `app/bot/timeparse.py` | Reads reminder times in English and Malay |
 | `app/bot/categories.py` | `/categories`: rename and merge categories |
 | `app/bot/export.py` | `/export` files |
 | `app/bot/formatting.py` | Telegram HTML rendering, error messages, keyboards |
