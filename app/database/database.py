@@ -62,14 +62,31 @@ CREATE TABLE IF NOT EXISTS pending_jobs (
 """
 
 
+# A reminder points at a saved item (item_id) or is just text (/remind).
 _REMINDERS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    item_id INTEGER NOT NULL,
+    item_id INTEGER,
+    text TEXT,
     remind_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+"""
+# The first version required item_id; SQLite can't relax NOT NULL in place.
+_REMINDERS_MIGRATION = """
+ALTER TABLE reminders RENAME TO reminders_old;
+CREATE TABLE reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    item_id INTEGER,
+    text TEXT,
+    remind_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+INSERT INTO reminders (id, user_id, item_id, remind_at, created_at)
+    SELECT id, user_id, item_id, remind_at, created_at FROM reminders_old;
+DROP TABLE reminders_old;
 """
 
 
@@ -84,6 +101,8 @@ def init_db() -> None:
         conn.execute(_USER_SETTINGS_SCHEMA)
         conn.execute(_PENDING_JOBS_SCHEMA)
         conn.execute(_REMINDERS_SCHEMA)
+        if not _column_exists(conn, "reminders", "text"):
+            conn.executescript(_REMINDERS_MIGRATION)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
         for column in ("previous_summary", "category", "user_note"):
@@ -413,11 +432,11 @@ def delete_job(job_id: int) -> None:
         conn.execute("DELETE FROM pending_jobs WHERE id = ?", (job_id,))
 
 
-def add_reminder(user_id: int, item_id: int, remind_at: str) -> int:
+def add_reminder(user_id: int, item_id: int | None, remind_at: str, text: str | None = None) -> int:
     with sqlite3.connect(config.db_path) as conn:
         cursor = conn.execute(
-            "INSERT INTO reminders (user_id, item_id, remind_at, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, item_id, remind_at, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO reminders (user_id, item_id, text, remind_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, item_id, text, remind_at, datetime.now(timezone.utc).isoformat()),
         )
         return cursor.lastrowid
 
@@ -432,13 +451,14 @@ def get_due_reminders(now_iso: str) -> list[dict]:
 
 
 def list_reminders(user_id: int) -> list[dict]:
-    """Upcoming reminders, soonest first, with each item's title."""
+    """Upcoming reminders, soonest first: text reminders, plus note reminders
+    (with the note's title) whose note still exists."""
     with sqlite3.connect(config.db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT r.id, r.item_id, r.remind_at, s.title, s.original_text FROM reminders r "
-            "JOIN summaries s ON s.id = r.item_id AND s.user_id = r.user_id "
-            "WHERE r.user_id = ? ORDER BY r.remind_at",
+            "SELECT r.id, r.item_id, r.text, r.remind_at, s.title, s.original_text FROM reminders r "
+            "LEFT JOIN summaries s ON s.id = r.item_id AND s.user_id = r.user_id "
+            "WHERE r.user_id = ? AND (r.item_id IS NULL OR s.id IS NOT NULL) ORDER BY r.remind_at",
             (user_id,),
         ).fetchall()
     return [dict(row) for row in rows]

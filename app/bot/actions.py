@@ -23,6 +23,7 @@ from app.bot.formatting import (
     format_saved_summary,
     gemini_error_text,
 )
+from app.bot.reminders import OTHER_TIME_PROMPT, apply_other_time, other_time_prompt_id
 from app.bot.reminders import build_picker as build_remind_picker
 from app.config import config
 from app.database.database import (
@@ -107,6 +108,12 @@ async def handle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "remind":
         await query.message.reply_text(
             f"⏰ When should I remind you about #{item_id}?", reply_markup=build_remind_picker(item_id)
+        )
+    elif action == "remindat":
+        await query.message.reply_text(
+            f"{OTHER_TIME_PROMPT.format(id=item_id)}\n\nFor example: tomorrow 8am, fri 3pm, in 2 hours, 25/11 9:30am, "
+            "esok pukul 3 petang.",
+            reply_markup=ForceReply(input_field_placeholder="e.g. tomorrow 8am"),
         )
     elif action == "transcript":
         text = item["original_text"]
@@ -194,6 +201,10 @@ async def apply_reply_edit(message: Message, user_id: int) -> bool:
     replied = message.reply_to_message
     if replied is None or replied.from_user is None or not replied.from_user.is_bot:
         return False
+    reminder_item = other_time_prompt_id(replied.text)
+    if reminder_item is not None:
+        await apply_other_time(message, user_id, reminder_item)
+        return True
     parsed = parse_reply_prompt(replied.text)
     if parsed is None:
         return False

@@ -76,6 +76,7 @@ from app.database.database import (
 )
 from app.bot.actions import apply_reply_edit, build_item_actions_keyboard
 from app.bot.categories import apply_category_rename
+from app.bot.reminders import create_text_reminder, natural_reminder_request
 from app.bot.formatting import (
     NO_API_KEY_TEXT,
     SUMMARY_FAILED_TEXT,
@@ -166,6 +167,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if await apply_reply_edit(message, user.id) or await apply_category_rename(message, user.id):
+        return
+
+    reminder_request = natural_reminder_request(raw_text)
+    if reminder_request is not None:
+        await create_text_reminder(message, user.id, reminder_request)
         return
 
     # Checked before anything costs a Gemini request.

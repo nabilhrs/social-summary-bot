@@ -24,7 +24,14 @@ from app.bot.actions import (
     handle_setcat_callback,
     handle_star_callback,
 )
-from app.bot.reminders import handle_cancel_callback, handle_remind_callback, reminder_loop, reminders_command
+from app.bot.reminders import (
+    handle_cancel_callback,
+    handle_remind_callback,
+    handle_undo_callback,
+    remind_command,
+    reminder_loop,
+    reminders_command,
+)
 from app.bot.background import backfill_loop
 from app.bot.categories import categories_command, handle_category_callback
 from app.bot.digest import digest_loop
@@ -82,6 +89,7 @@ _BOT_COMMANDS = [
     BotCommand("move", "Move a saved item to another category"),
     BotCommand("note", "Add your own note to a saved item"),
     BotCommand("digest", "Show your weekly digest now"),
+    BotCommand("remind", "Set a reminder, e.g. tomorrow 7am dentist"),
     BotCommand("reminders", "See or cancel your reminders"),
     BotCommand("setkey", "Set your own Gemini API key"),
 ]
@@ -148,6 +156,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("note", note_command))
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
+    app.add_handler(CommandHandler("remind", remind_command))
     app.add_handler(CommandHandler("setkey", setkey_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
@@ -174,8 +183,9 @@ def build_app() -> Application:
     )
     app.add_handler(CallbackQueryHandler(handle_duplicate_callback, pattern=r"^dup:(view|again):\d+$"))
     app.add_handler(
-        CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note|transcript|remind):\d+$")
+        CallbackQueryHandler(handle_action_callback, pattern=r"^act:(rename|cat|newcat|note|transcript|remind|remindat):\d+$")
     )
+    app.add_handler(CallbackQueryHandler(handle_undo_callback, pattern=r"^remundo:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_remind_callback, pattern=r"^remind:\d+:(tn|tm|wk|nw|mo)$"))
     app.add_handler(CallbackQueryHandler(handle_cancel_callback, pattern=r"^remcancel:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_setcat_callback, pattern=r"^setcat:\d+:.+$"))
