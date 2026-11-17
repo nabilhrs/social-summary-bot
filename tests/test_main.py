@@ -13,6 +13,7 @@ def test_background_tasks_start_on_init_and_are_cancelled_on_stop(monkeypatch):
 
     monkeypatch.setattr(main, "backfill_loop", lambda: forever("backfill"))
     monkeypatch.setattr(main, "digest_loop", lambda bot: forever("digest"))
+    monkeypatch.setattr(main, "retry_loop", lambda run_job: forever("retry"))
 
     async def set_my_commands(commands):
         pass
@@ -23,7 +24,7 @@ def test_background_tasks_start_on_init_and_are_cancelled_on_stop(monkeypatch):
         await main._post_init(app)
         await asyncio.sleep(0)
         tasks = app.bot_data["background_tasks"]
-        assert sorted(started) == ["backfill", "digest"]
+        assert sorted(started) == ["backfill", "digest", "retry"]
         await main._post_stop(app)
         return tasks
 

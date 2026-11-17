@@ -30,20 +30,30 @@ def test_album_items_are_collected_and_processed_once_in_order(monkeypatch):
     assert handlers._albums == {} and handlers._album_timers == {}
 
 
+_FILES = {}
+
+
 class _File:
     def __init__(self, data):
         self.data = data
-
-    async def get_file(self):
-        return self
+        self.file_id = f"id-{len(_FILES)}"
+        _FILES[self.file_id] = self
 
     async def download_as_bytearray(self):
         return bytearray(self.data)
 
 
+class _Bot:
+    async def get_file(self, file_id):
+        return _FILES[file_id]
+
+
 class _ReplyMessage(SimpleNamespace):
     async def reply_text(self, text, **kwargs):
         self.replies.append(text)
+
+    def get_bot(self):
+        return _Bot()
 
 
 def test_process_album_reads_files_together_and_saves_one_note(monkeypatch):

@@ -21,6 +21,7 @@ from telegram.ext import (
 from app.bot.actions import handle_action_callback, handle_setcat_callback, handle_star_callback
 from app.bot.background import backfill_loop
 from app.bot.digest import digest_loop
+from app.bot.retry import retry_loop
 from app.config import config
 from app.bot.commands import (
     start,
@@ -50,6 +51,7 @@ from app.bot.handlers import (
     handle_merge_callback,
     handle_message,
     handle_unsupported,
+    run_job,
 )
 from app.database.database import init_db
 
@@ -95,6 +97,7 @@ async def _post_init(app: Application) -> None:
     app.bot_data["background_tasks"] = [
         asyncio.create_task(backfill_loop(), name="backfill"),
         asyncio.create_task(digest_loop(app.bot), name="digest"),
+        asyncio.create_task(retry_loop(lambda job: run_job(app.bot, job)), name="retry"),
     ]
 
 

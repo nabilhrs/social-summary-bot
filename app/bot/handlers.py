@@ -6,7 +6,10 @@ URL -> normalize -> summarize (flagging related saved items) -> reply -> save
 -> optionally offer to merge with a related item.
 """
 import asyncio
+import json
 import logging
+from dataclasses import asdict
+from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ChatAction, ParseMode
@@ -44,11 +47,24 @@ from app.extractors.media import (
     classify_document,
     extract_text,
 )
-from app.ai.gemini import FAILED, TEXT_ITEM, GeminiError, describe_many
+from app.ai.gemini import FAILED, QUOTA_DAILY, TEXT_ITEM, UNAVAILABLE, GeminiError, describe_many
 from app.ai.related import pick_candidates
 from app.ai.summarizer import summarize, merge_summaries
 from app.bot.browse import display_title
+from app.bot.retry import (
+    MAX_ATTEMPTS,
+    QUOTA_SCHEDULED_TEXT,
+    RETRY_GAVE_UP_TEXT,
+    RETRY_SCHEDULED_TEXT,
+    RETRYABLE,
+    ChatTarget,
+    describe_wait,
+    next_attempt_at,
+)
 from app.database.database import (
+    add_pending_job,
+    delete_job,
+    reschedule_job,
     save_summary,
     get_categories,
     get_recent,
@@ -206,85 +222,133 @@ async def handle_duplicate_callback(update: Update, context: ContextTypes.DEFAUL
     await _process_input(query.message, user.id, item["url"])
 
 
-async def _process_input(message: Message, user_id: int, raw_text: str) -> None:
-    """Extract (for links), summarize and save. `message` is what replies go to."""
+async def _process_input(message, user_id: int, raw_text: str, job: dict | None = None) -> bool:
+    """Extract (for links), summarize and save. `message` is what replies go
+    to. Returns False if it was put off for a later retry (see retry.py),
+    True once it's finished, successfully or not. `job` is set when this is
+    a background retry; progress messages are skipped then."""
     # Resolved before any extraction work — no point downloading a video
     # (the slowest, most expensive path) only to fail at the
     # summarize step for lack of a key.
     api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
     if api_key is None:
         await message.reply_text(NO_API_KEY_TEXT)
-        return
+        return True
 
-    is_threads_content = False
+    async def progress(text: str) -> None:
+        if job is None:
+            await message.reply_text(text)
 
-    if looks_like_url(raw_text):
-        platform = detect_unsupported_platform(raw_text)
-        if platform is not None:
-            await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
-            return
+    try:
+        is_threads_content = False
+        if looks_like_url(raw_text):
+            platform = detect_unsupported_platform(raw_text)
+            if platform is not None:
+                await message.reply_text(UNSUPPORTED_PLATFORM_TEXT.format(platform=platform))
+                return True
 
-        video_source = video_platform(raw_text)
-        youtube_id = youtube_video_id(raw_text)
-        if youtube_id is not None:
-            await message.reply_text(YOUTUBE_PROCESSING_TEXT)
-            try:
-                extracted = await fetch_youtube_video(youtube_id, api_key)
-            except GeminiError as exc:
-                await message.reply_text(YOUTUBE_FAILED_TEXT if exc.kind == FAILED else gemini_error_text(exc))
-                return
-            content = normalize_youtube_video(raw_text, extracted)
-        elif video_source is not None:
-            name = VIDEO_PLATFORM_NAMES[video_source]
-            await message.reply_text(VIDEO_PROCESSING_TEXT.format(platform=name))
-            try:
-                extracted = await fetch_video_link(raw_text, api_key)
-            except GeminiError as exc:
-                await message.reply_text(gemini_error_text(exc))
-                return
-            except VideoUnavailable as exc:
-                text = NO_VIDEO_TEXT if exc.reason == NO_VIDEO else LOGIN_REQUIRED_TEXT
-                await message.reply_text(text.format(platform=name))
-                return
-            if extracted is None:
-                await message.reply_text(VIDEO_FAILED_TEXT.format(platform=name))
-                return
-            content = normalize_video_post(raw_text, extracted, video_source)
-        elif is_threads_url(raw_text):
-            extracted = await fetch_threads_post(raw_text)
-            if extracted is None:
-                await message.reply_text(EXTRACTION_FAILED_TEXT)
-                return
-            is_threads_content = True
-            content = normalize_threads_post(raw_text, extracted)
+            video_source = video_platform(raw_text)
+            youtube_id = youtube_video_id(raw_text)
+            if youtube_id is not None:
+                await progress(YOUTUBE_PROCESSING_TEXT)
+                try:
+                    extracted = await fetch_youtube_video(youtube_id, api_key)
+                except GeminiError as exc:
+                    if exc.kind != FAILED:
+                        raise
+                    await message.reply_text(YOUTUBE_FAILED_TEXT)
+                    return True
+                content = normalize_youtube_video(raw_text, extracted)
+            elif video_source is not None:
+                name = VIDEO_PLATFORM_NAMES[video_source]
+                await progress(VIDEO_PROCESSING_TEXT.format(platform=name))
+                try:
+                    extracted = await fetch_video_link(raw_text, api_key)
+                except VideoUnavailable as exc:
+                    text = NO_VIDEO_TEXT if exc.reason == NO_VIDEO else LOGIN_REQUIRED_TEXT
+                    await message.reply_text(text.format(platform=name))
+                    return True
+                if extracted is None:
+                    await message.reply_text(VIDEO_FAILED_TEXT.format(platform=name))
+                    return True
+                content = normalize_video_post(raw_text, extracted, video_source)
+            elif is_threads_url(raw_text):
+                extracted = await fetch_threads_post(raw_text)
+                if extracted is None:
+                    await message.reply_text(EXTRACTION_FAILED_TEXT)
+                    return True
+                is_threads_content = True
+                content = normalize_threads_post(raw_text, extracted)
+            else:
+                extracted = await fetch_and_extract(raw_text)
+                if extracted is None:
+                    await message.reply_text(EXTRACTION_FAILED_TEXT)
+                    return True
+                content = normalize_web_article(raw_text, extracted)
         else:
-            extracted = await fetch_and_extract(raw_text)
-            if extracted is None:
-                await message.reply_text(EXTRACTION_FAILED_TEXT)
-                return
-            content = normalize_web_article(raw_text, extracted)
-    else:
-        content = normalize_pasted_text(raw_text)
+            content = normalize_pasted_text(raw_text)
 
-    await _summarize_and_save(message, user_id, api_key, content)
+        await _summarize_and_save(message, user_id, api_key, content)
+    except GeminiError as exc:
+        return await gemini_failure(message, user_id, exc, "text", {"text": raw_text}, job)
     if is_threads_content:
         await message.reply_text(THREADS_LIMITATION_NOTE)
+    return True
 
 
-async def _summarize_and_save(message: Message, user_id: int, api_key: str, content: dict) -> None:
+async def gemini_failure(message, user_id: int, exc: GeminiError, kind: str, payload: dict, job: dict | None) -> bool:
+    """A busy or rate-limited Gemini puts the work off for a retry instead
+    of failing (False); anything else is reported and ends it (True)."""
+    if exc.kind not in RETRYABLE:
+        await message.reply_text(gemini_error_text(exc))
+        return True
+    attempts = job["attempts"] + 1 if job else 1
+    if attempts > MAX_ATTEMPTS:
+        await message.reply_text(RETRY_GAVE_UP_TEXT)
+        return True
+    now = datetime.now(timezone.utc)
+    when = next_attempt_at(exc.kind, attempts, now)
+    if job is not None:
+        await asyncio.to_thread(reschedule_job, job["id"], attempts, when.isoformat())
+        return False
+    await asyncio.to_thread(
+        add_pending_job, user_id, message.chat_id, message.message_id, kind, json.dumps(payload), when.isoformat()
+    )
+    template = QUOTA_SCHEDULED_TEXT if exc.kind == QUOTA_DAILY else RETRY_SCHEDULED_TEXT
+    await message.reply_text(template.format(when=describe_wait(when, now)))
+    return False
+
+
+async def run_job(bot, job: dict) -> None:
+    """One background retry of a saved pending job (see retry.py)."""
+    target = ChatTarget(bot, job["chat_id"], job["message_id"])
+    payload = json.loads(job["payload"])
+    try:
+        if job["kind"] == "text":
+            finished = await _process_input(target, job["user_id"], payload["text"], job)
+        else:
+            finished = await process_files(target, job["user_id"], payload["files"], payload.get("caption"), job)
+    except Exception:
+        logger.exception("Pending job %s failed unexpectedly", job["id"])
+        finished = job["attempts"] + 1 > MAX_ATTEMPTS
+        if not finished:
+            when = next_attempt_at(UNAVAILABLE, job["attempts"] + 1, datetime.now(timezone.utc))
+            await asyncio.to_thread(reschedule_job, job["id"], job["attempts"] + 1, when.isoformat())
+    if finished:
+        await asyncio.to_thread(delete_job, job["id"])
+
+
+async def _summarize_and_save(message, user_id: int, api_key: str, content: dict) -> None:
     """Shared tail of every input path: summarize, save, reply, and offer a
-    merge if Gemini flagged a related saved item."""
+    merge if Gemini flagged a related saved item. Raises GeminiError; the
+    caller decides whether to retry later."""
     all_items = await asyncio.to_thread(get_recent, user_id, None)
     recent_items = pick_candidates(content["text"], all_items, recent_limit=_RECENT_HISTORY_LIMIT)
 
     categories = [name for name, _count in await asyncio.to_thread(get_categories, user_id)]
 
     await message.chat.send_action(ChatAction.TYPING)
-    try:
-        summary = await summarize(content, recent_items, api_key, categories)
-    except GeminiError as exc:
-        await message.reply_text(gemini_error_text(exc))
-        return
+    summary = await summarize(content, recent_items, api_key, categories)
 
     # Web articles and YouTube videos keep their real title; everything else gets the generated one.
     if not (content["source"] in ("web", "youtube") and content.get("title")):
@@ -367,38 +431,64 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if info.file_size and info.file_size > MAX_DOWNLOAD_BYTES:
         await message.reply_text(FILE_TOO_LARGE_TEXT)
         return
+    await process_files(message, user.id, [file_ref(file_obj, info)], message.caption)
 
-    api_key = await asyncio.to_thread(resolve_gemini_api_key, user.id)
+
+def file_ref(file_obj, info: MediaInfo) -> dict:
+    """What's needed to download and read a Telegram file again later; a
+    plain dict so it can be saved with a pending job."""
+    return {"file_id": file_obj.file_id, **asdict(info)}
+
+
+async def process_files(
+    message, user_id: int, refs: list[dict], caption: str | None, job: dict | None = None, skipped: int = 0
+) -> bool:
+    """Read one file, or several sent together, summarize and save. Returns
+    False if put off for a retry, True once finished (see _process_input)."""
+    api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
     if api_key is None:
         await message.reply_text(NO_API_KEY_TEXT)
-        return
+        return True
+    infos = [MediaInfo(**{k: v for k, v in ref.items() if k != "file_id"}) for ref in refs]
+    if job is None:
+        if len(refs) == 1:
+            await message.reply_text(MEDIA_PROCESSING_TEXTS[infos[0].kind])
+        else:
+            note = f" (skipping {skipped} I can't read)" if skipped else ""
+            await message.reply_text(ALBUM_PROCESSING_TEXT.format(count=len(refs), note=note))
 
-    await message.reply_text(MEDIA_PROCESSING_TEXTS[info.kind])
     try:
-        telegram_file = await file_obj.get_file()
-        data = bytes(await telegram_file.download_as_bytearray())
+        bot = message.get_bot()
+        files = [bytes(await (await bot.get_file(ref["file_id"])).download_as_bytearray()) for ref in refs]
     except Exception:
-        logger.exception("Failed to download %s from Telegram", info.source)
+        logger.exception("Failed to download %d file(s) from Telegram", len(refs))
         await message.reply_text(MEDIA_DOWNLOAD_FAILED_TEXT)
-        return
+        return True
 
     try:
-        extracted = await asyncio.to_thread(extract_text, api_key, data, info)
+        if len(refs) == 1:
+            extracted = await asyncio.to_thread(extract_text, api_key, files[0], infos[0])
+        else:
+            items = [
+                (data.decode("utf-8", errors="replace"), TEXT_ITEM) if info.kind == TEXT else (data, info.mime_type)
+                for data, info in zip(files, infos)
+            ]
+            extracted = await asyncio.to_thread(describe_many, api_key, items, ALBUM_PROMPT, 90, 150)
+        if not extracted:
+            await message.reply_text(MEDIA_EMPTY_TEXT)
+            return True
+        single = len(refs) == 1
+        content = {
+            "title": infos[0].file_name if single else None,
+            "author": None,
+            "source": infos[0].source if single else "album",
+            "url": None,
+            "text": build_media_text(extracted, caption),
+        }
+        await _summarize_and_save(message, user_id, api_key, content)
     except GeminiError as exc:
-        await message.reply_text(gemini_error_text(exc))
-        return
-    if not extracted:
-        await message.reply_text(MEDIA_EMPTY_TEXT)
-        return
-
-    content = {
-        "title": info.file_name,
-        "author": None,
-        "source": info.source,
-        "url": None,
-        "text": build_media_text(extracted, message.caption),
-    }
-    await _summarize_and_save(message, user.id, api_key, content)
+        return await gemini_failure(message, user_id, exc, "files", {"files": refs, "caption": caption}, job)
+    return True
 
 
 # Telegram delivers an album (several files sent together) as separate
@@ -433,28 +523,12 @@ async def process_album(parts: list, user_id: int) -> None:
     reply_to = parts[0][0]
     try:
         usable = [p for p in parts if p[2] is not None and not (p[2].file_size and p[2].file_size > MAX_DOWNLOAD_BYTES)]
-        skipped = len(parts) - len(usable)
         if not usable:
             await reply_to.reply_text(UNSUPPORTED_FILE_TEXT)
             return
-        api_key = await asyncio.to_thread(resolve_gemini_api_key, user_id)
-        if api_key is None:
-            await reply_to.reply_text(NO_API_KEY_TEXT)
-            return
-
-        note = f" (skipping {skipped} I can't read)" if skipped else ""
-        await reply_to.reply_text(ALBUM_PROCESSING_TEXT.format(count=len(usable), note=note))
-        items = []
-        for _message, file_obj, info in usable:
-            data = bytes(await (await file_obj.get_file()).download_as_bytearray())
-            items.append((data.decode("utf-8", errors="replace"), TEXT_ITEM) if info.kind == TEXT else (data, info.mime_type))
-        extracted = await asyncio.to_thread(describe_many, api_key, items, ALBUM_PROMPT, 90, 150)
-
         caption = next((m.caption for m, _, _ in parts if m.caption), None)
-        content = {"title": None, "author": None, "source": "album", "url": None, "text": build_media_text(extracted, caption)}
-        await _summarize_and_save(reply_to, user_id, api_key, content)
-    except GeminiError as exc:
-        await reply_to.reply_text(gemini_error_text(exc))
+        refs = [file_ref(file_obj, info) for _m, file_obj, info in usable]
+        await process_files(reply_to, user_id, refs, caption, skipped=len(parts) - len(usable))
     except Exception:
         logger.exception("Processing an album of %d file(s) failed", len(parts))
         await reply_to.reply_text(MEDIA_DOWNLOAD_FAILED_TEXT)

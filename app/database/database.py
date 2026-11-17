@@ -45,6 +45,23 @@ CREATE TABLE IF NOT EXISTS user_settings (
 """
 
 
+# Things to summarize later because Gemini was busy or out of quota (see
+# app/bot/retry.py). payload is JSON: {"text": ...} or {"files": [...], "caption": ...}.
+_PENDING_JOBS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pending_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER,
+    kind TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    next_attempt_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(row[1] == column for row in rows)
@@ -54,6 +71,7 @@ def init_db() -> None:
     with sqlite3.connect(config.db_path) as conn:
         conn.execute(_SCHEMA)
         conn.execute(_USER_SETTINGS_SCHEMA)
+        conn.execute(_PENDING_JOBS_SCHEMA)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
         # table — migrate databases created before these columns existed.
         for column in ("previous_summary", "category", "user_note"):
@@ -336,6 +354,41 @@ def undo_merge(row_id: int, previous_summary: str, user_id: int) -> None:
             "UPDATE summaries SET summary = ?, merged_from = NULL WHERE id = ? AND user_id = ?",
             (previous_summary, row_id, user_id),
         )
+
+
+def add_pending_job(
+    user_id: int, chat_id: int, message_id: int | None, kind: str, payload: str, next_attempt_at: str
+) -> int:
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO pending_jobs (user_id, chat_id, message_id, kind, payload, attempts, next_attempt_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+            (user_id, chat_id, message_id, kind, payload, next_attempt_at, datetime.now(timezone.utc).isoformat()),
+        )
+        return cursor.lastrowid
+
+
+def get_due_jobs(now_iso: str) -> list[dict]:
+    """Oldest first."""
+    with sqlite3.connect(config.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM pending_jobs WHERE next_attempt_at <= ? ORDER BY id", (now_iso,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def reschedule_job(job_id: int, attempts: int, next_attempt_at: str) -> None:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute(
+            "UPDATE pending_jobs SET attempts = ?, next_attempt_at = ? WHERE id = ?",
+            (attempts, next_attempt_at, job_id),
+        )
+
+
+def delete_job(job_id: int) -> None:
+    with sqlite3.connect(config.db_path) as conn:
+        conn.execute("DELETE FROM pending_jobs WHERE id = ?", (job_id,))
 
 
 def get_user_api_key(user_id: int) -> str | None:
