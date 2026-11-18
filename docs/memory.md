@@ -291,6 +291,30 @@ codes.
 
 ---
 
+## #12 — Polling connection blips sent as crash alerts
+
+**Symptom:** The owner kept getting "⚠️ Something broke … Unhandled
+exception while handling a background task — NetworkError:
+httpx.ReadError" on Telegram, about once an hour (the mute window).
+
+**Cause:** While long-polling for new messages (getUpdates), Telegram or
+the network sometimes drops the connection. python-telegram-bot retries by
+itself, but it also passes the error to the application's error handler
+with `update=None`. `log_error` logged every error at ERROR with exception
+info, which is exactly what the alert handler forwards.
+
+**Fix:** `log_error` logs a `NetworkError` (which includes `TimedOut`) with
+no update as a one-line WARNING and returns. Network errors while
+handling a real message or button tap still alert, since a reply may
+have been lost.
+
+**Lesson:** An alert filter that keys on "ERROR with a traceback" is only
+as good as what gets logged that way. Before turning on alerts, check
+which errors the library reports through the error handler but already
+recovers from.
+
+---
+
 ## Environment notes (not bugs, but easy to re-trip)
 
 - This machine's default Python (`Python312-32`) is **32-bit**. The

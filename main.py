@@ -9,6 +9,7 @@ import logging
 import os
 
 from telegram import BotCommand, Update
+from telegram.error import NetworkError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -125,6 +126,12 @@ def describe_update(update: object) -> str:
 
 
 async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update is None and isinstance(context.error, NetworkError):
+        # A dropped connection while waiting for new messages (getUpdates).
+        # The library reconnects by itself, so this is logged without
+        # exception info and doesn't alert the owner (docs/memory.md #12).
+        logger.warning("Telegram connection blip while polling, reconnecting: %r", context.error)
+        return
     logger.debug("Update that failed: %s", update)
     logger.error("Unhandled exception while handling %s", describe_update(update), exc_info=context.error)
 

@@ -194,3 +194,28 @@ def test_describe_update():
     assert main.describe_update(_U(text="hello")) == "a message"
     assert main.describe_update(_U(caption=None, text=None)) == "a file or photo"
     assert main.describe_update(None) == "a background task"
+
+
+def test_polling_connection_blips_do_not_alert(caplog):
+    from types import SimpleNamespace
+
+    import main
+    from telegram.error import NetworkError, TimedOut
+
+    handler = AlertHandler()
+    for error in (NetworkError("httpx.ReadError: "), TimedOut()):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            asyncio.run(main.log_error(None, SimpleNamespace(error=error)))
+        assert not any(handler.should_alert(record) for record in caplog.records)
+        assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+    caplog.clear()
+    try:
+        raise RuntimeError("real bug")
+    except RuntimeError as exc:
+        crash = exc
+    with caplog.at_level(logging.DEBUG):
+        asyncio.run(main.log_error(None, SimpleNamespace(error=crash)))
+    # Imported in tests, the logger is "main" rather than "__main__", so check the record itself.
+    assert any(record.levelno == logging.ERROR and record.exc_info for record in caplog.records)
